@@ -37,3 +37,9 @@ out-tsc/
 .claude/.main-session-id
 .claude/settings.local.json
 # <<< omnifield-skeleton <<<
+
+# --- tasker (product-owned; вне managed-блока) ---
+# Локальная БД при go run без TASKER_DB (дефолт tasker.db в cwd); прод-БД на волюме /data.
+*.db
+*.db-shm
+*.db-wal

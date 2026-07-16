@@ -11,7 +11,10 @@ permissions: { contents: read, packages: read }
 jobs:
   go:
     uses: omnifield/devopser/.github/workflows/go-ci.yml@main
-  web:
-    uses: omnifield/devopser/.github/workflows/web-ci.yml@main
-    with:
-      working-directory: web
+  # web-job включим, когда приземлится фронт (web/, vite:5173). Сейчас MVP-граница —
+  # только бэк-фундамент (брифом фронт «отложить»), каталога web/ ещё нет → reusable
+  # web-ci упал бы на пустоте. Возвращаем вместе с первым фронт-скелетом.
+  # web:
+  #   uses: omnifield/devopser/.github/workflows/web-ci.yml@main
+  #   with:
+  #     working-directory: web

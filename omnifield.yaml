@@ -1,0 +1,14 @@
+apiVersion: omnifield.dev/v1
+name: tasker
+type: fullstack
+title: Tasker
+description: Дерево разработки — durable источник правды дизайна продуктов (рекурсивный узел + роллап)
+reach:
+  routes:
+    # Фронт (vite) — реальный listening-порт web/vite.config.ts (server.port: 5173). Появится позже.
+    - path: /tasker
+      port: 5173
+    # Backend (Go) — контрактный порт registry/ports.md (нативный префикс /tasker/;
+    # rewrite /api/tasker → tasker:8030/tasker/ — зона hub-core, как chater).
+    - path: /api/tasker
+      port: 8030

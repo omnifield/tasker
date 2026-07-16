@@ -13,8 +13,9 @@
   "mounts": [
     "source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume",
     "source=omnifield-secrets,target=/home/vscode/.secrets,type=volume",
-    "source=omnifield-registry,target=/omnifield-registry,type=volume"
+    "source=omnifield-registry,target=/omnifield-registry,type=volume",
+    "source=tasker-data,target=/data/tasker,type=volume"
   ],
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.local/share/pnpm/store /home/vscode/.secrets && sudo chown vscode:vscode /omnifield-registry && mkdir -p \"$CLAUDE_CONFIG_DIR\" && { [ -f \"$CLAUDE_CONFIG_DIR/.claude.json\" ] || printf '%s\\n' '{\"hasCompletedOnboarding\":true,\"hasTrustDialogAccepted\":true,\"theme\":\"dark\"}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"; } && (timeout 20 npm whoami --registry=https://npm.pkg.github.com >/dev/null 2>&1 || { echo '✖ npm.pkg.github.com: нет валидного PAT в $NPM_CONFIG_USERCONFIG (секрет-volume omnifield-secrets) — @omnifield-пакеты не встанут. Занос кредов: devbox/README §Пост-шаги'; exit 1; }) && { [ -f package.json ] && pnpm install || { [ -f web/package.json ] && pnpm -C web install --frozen-lockfile; } || echo \"no pnpm workspace — skip\"; }",
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.local/share/pnpm/store /home/vscode/.secrets && sudo chown vscode:vscode /omnifield-registry && sudo mkdir -p /data/tasker && sudo chown -R vscode:vscode /data/tasker && mkdir -p \"$CLAUDE_CONFIG_DIR\" && { [ -f \"$CLAUDE_CONFIG_DIR/.claude.json\" ] || printf '%s\\n' '{\"hasCompletedOnboarding\":true,\"hasTrustDialogAccepted\":true,\"theme\":\"dark\"}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"; } && (timeout 20 npm whoami --registry=https://npm.pkg.github.com >/dev/null 2>&1 || { echo '✖ npm.pkg.github.com: нет валидного PAT в $NPM_CONFIG_USERCONFIG (секрет-volume omnifield-secrets) — @omnifield-пакеты не встанут. Занос кредов: devbox/README §Пост-шаги'; exit 1; }) && { [ -f package.json ] && pnpm install || { [ -f web/package.json ] && pnpm -C web install --frozen-lockfile; } || echo \"no pnpm workspace — skip\"; }",
   "postStartCommand": "node scripts/devbox-publish.mjs; node scripts/devbox-services.mjs up"
 }
