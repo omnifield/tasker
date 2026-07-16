@@ -1,0 +1,47 @@
+#!/usr/bin/env sh
+# Commit-каденс (POLICY): этап → проверка → коммит. Быстрый гейт — hygiene + lint +
+# typecheck по затронутому. Bypass (emergency only): git commit --no-verify
+
+echo ""
+echo "[pre-commit] sherif (monorepo hygiene)…"
+pnpm sherif || {
+  echo "  [pre-commit] FAILED — sherif нашёл расхождения workspace-гигиены."
+  exit 1
+}
+
+# Бутстрап-кейс: origin/main ещё не существует (первый пуш) → гоняем всё.
+if git rev-parse --verify -q origin/main >/dev/null; then
+  echo "[pre-commit] nx affected lint + typecheck (base=origin/main)…"
+  CMD="pnpm nx affected -t lint,typecheck --base=origin/main"
+else
+  echo "[pre-commit] origin/main отсутствует (bootstrap) — nx run-many lint + typecheck…"
+  # run-many в nx 23 НЕ парсит comma-список (молчаливый no-op) — только space-форма.
+  CMD="pnpm nx run-many -t lint typecheck"
+fi
+
+$CMD || {
+  echo ""
+  echo "  [pre-commit] FAILED — lint/typecheck красные."
+  echo "  Bypass (emergency only): git commit --no-verify"
+  echo ""
+  exit 1
+}
+
+# B7 (brief devbox-first-run-dx): tracked *.sh обязаны хранить exec-бит (index mode 100755).
+# Правка через \\wsl.localhost / чекаут на FS без x-бита сбивает его → permission-denied
+# у следующего юзера (weber потерял бит на launcher'е). Ловим ДО пуша, не в permission-denied.
+BADSH=$(git ls-files -s -- '*.sh' | awk '$1 != "100755" { print $4 }')
+if [ -n "$BADSH" ]; then
+  echo ""
+  echo "  [pre-commit] FAILED — tracked .sh без exec-бита (index mode ≠ 100755):"
+  echo "$BADSH" | sed 's/^/    - /'
+  echo "  Починка: git update-index --chmod=+x <файл>  (+ chmod +x локально)"
+  echo ""
+  exit 1
+fi
+
+# Репо-специфичное расширение гейта (НЕ drift-managed, пример: lint:py brainer).
+if [ -f .husky/pre-commit.local ]; then
+  echo "[pre-commit] repo-local гейт (.husky/pre-commit.local)…"
+  . .husky/pre-commit.local || exit 1
+fi

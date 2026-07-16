@@ -1,0 +1,23 @@
+# Канон-baseline golangci-lint для go-репо экосистемы (schema v2).
+# Источник baseline — knowledger standards/canon/languages/go.md; исполняющий дом
+# механизма — devopser (reusable go-ci.yml запускает линтер с этим конфигом).
+# Вендорится копией в каждый go-продукт (эталон — здесь). Ноль продуктовой заточки.
+version: "2"
+
+linters:
+  # default: none + явный список = детерминированный baseline (не «дефолт линтера поехал»).
+  default: none
+  enable:
+    - errcheck      # непроверенные ошибки
+    - govet         # go vet как линтер
+    - staticcheck   # staticcheck (в v2 включает gosimple + stylecheck)
+    - unused        # мёртвый код
+    - ineffassign   # присваивания, которые не используются
+    - misspell      # опечатки в комментариях/строках
+    - gocritic      # набор диагностик стиля/багов
+    - revive        # быстрый golint-преемник
+
+formatters:
+  # gofumpt в schema v2 — форматтер, не линтер. Строже gofmt (канон go.md).
+  enable:
+    - gofumpt

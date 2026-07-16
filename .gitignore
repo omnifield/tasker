@@ -1,0 +1,39 @@
+# >>> omnifield-skeleton (managed by devopser; синк: init.mjs, не редактировать руками) >>>
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+# *.local — vite env; extension-point'ы эталонных хуков НЕ глотать (feedback brainer П1)
+!.husky/*.local
+.nx/
+coverage/
+*.tsbuildinfo
+# pnpm store падает в workspace, когда home и проект на разных devices (devbox 2а, Д4)
+.pnpm-store/
+
+# Python (uv)
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+out-tsc/
+
+# Claude Code runtime (harness state — hooks/settings трекаются, runtime нет)
+.claude/.main-session-id
+.claude/settings.local.json
+# <<< omnifield-skeleton <<<

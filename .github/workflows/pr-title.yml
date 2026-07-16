@@ -1,0 +1,7 @@
+name: PR title
+on:
+  pull_request: { types: [opened, edited, synchronize, reopened] }
+permissions: { pull-requests: read }
+jobs:
+  semantic:
+    uses: omnifield/devopser/.github/workflows/pr-title.yml@main

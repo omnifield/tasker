@@ -1,0 +1,20 @@
+{
+  "name": "omnifield-devbox",
+  "image": "ghcr.io/omnifield/devbox:v2026.07.10",
+  "remoteUser": "vscode",
+  "initializeCommand": "docker network create omnifield-gateway 2>/dev/null || true",
+  "runArgs": ["--network=omnifield-gateway", "--network-alias=tasker"],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.secrets/claude",
+    "NPM_CONFIG_USERCONFIG": "/home/vscode/.secrets/npmrc",
+    "GIT_CONFIG_GLOBAL": "/home/vscode/.secrets/gitconfig",
+    "GH_CONFIG_DIR": "/home/vscode/.secrets/gh"
+  },
+  "mounts": [
+    "source=omnifield-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume",
+    "source=omnifield-secrets,target=/home/vscode/.secrets,type=volume",
+    "source=omnifield-registry,target=/omnifield-registry,type=volume"
+  ],
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.local/share/pnpm/store /home/vscode/.secrets && sudo chown vscode:vscode /omnifield-registry && mkdir -p \"$CLAUDE_CONFIG_DIR\" && { [ -f \"$CLAUDE_CONFIG_DIR/.claude.json\" ] || printf '%s\\n' '{\"hasCompletedOnboarding\":true,\"hasTrustDialogAccepted\":true,\"theme\":\"dark\"}' > \"$CLAUDE_CONFIG_DIR/.claude.json\"; } && (timeout 20 npm whoami --registry=https://npm.pkg.github.com >/dev/null 2>&1 || { echo '✖ npm.pkg.github.com: нет валидного PAT в $NPM_CONFIG_USERCONFIG (секрет-volume omnifield-secrets) — @omnifield-пакеты не встанут. Занос кредов: devbox/README §Пост-шаги'; exit 1; }) && { [ -f package.json ] && pnpm install || { [ -f web/package.json ] && pnpm -C web install --frozen-lockfile; } || echo \"no pnpm workspace — skip\"; }",
+  "postStartCommand": "node scripts/devbox-publish.mjs; node scripts/devbox-services.mjs up"
+}

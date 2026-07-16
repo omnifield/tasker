@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+# Гейт перед remote (канон «эталон работает»): test + build по затронутому.
+# Bypass (emergency only): git push --no-verify
+
+echo ""
+
+# Бутстрап-кейс: origin/main ещё не существует (первый пуш) → гоняем всё.
+if git rev-parse --verify -q origin/main >/dev/null; then
+  echo "[pre-push] nx affected test + build (base=origin/main)…"
+  CMD="pnpm nx affected -t test,build --base=origin/main"
+else
+  echo "[pre-push] origin/main отсутствует (bootstrap) — nx run-many test + build…"
+  # run-many в nx 23 НЕ парсит comma-список (молчаливый no-op) — только space-форма.
+  CMD="pnpm nx run-many -t test build"
+fi
+
+$CMD || {
+  echo ""
+  echo "  [pre-push] FAILED — test/build красные. Не пушим сломанное."
+  echo "  Bypass (emergency only): git push --no-verify"
+  echo ""
+  exit 1
+}
+
+# Репо-специфичное расширение гейта (НЕ drift-managed, пример: test:py brainer).
+if [ -f .husky/pre-push.local ]; then
+  echo "[pre-push] repo-local гейт (.husky/pre-push.local)…"
+  . .husky/pre-push.local || exit 1
+fi
