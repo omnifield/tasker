@@ -1,0 +1,104 @@
+import { createResource, For, Show } from "solid-js";
+import type { TreeNode } from "./api";
+import { nodeActivity, nodeRelations } from "./api";
+import {
+  activityLabel,
+  activityText,
+  fmtTime,
+  isWaiting,
+  relationLabel,
+  rollupColor,
+  rollupLabel,
+  statusColor,
+  statusName,
+} from "./format";
+import { useTree } from "./treeCtx";
+
+// NodeDetail — правая панель выбранной ноды: вся документация и связи, что отдаёт бэк. Поля узла
+// (описание/статус/метки/роллап) берём из уже загруженного дерева; связи и историю тянем по key.
+export function NodeDetail(props: { node: TreeNode }) {
+  const tree = useTree();
+  const status = () => tree.statusFor(props.node.status_id);
+  const [relations] = createResource(() => props.node.key, nodeRelations);
+  const [activity] = createResource(() => props.node.key, nodeActivity);
+
+  return (
+    <aside class="detail">
+      <div class="detail-head">
+        <span class="key">{props.node.key}</span>
+        <span class="status" style={{ "background-color": statusColor(status()) }}>
+          {statusName(status())}
+        </span>
+        <Show when={props.node.rollup.has_children}>
+          <span class="rollup" style={{ "background-color": rollupColor(props.node.rollup.category) }}>
+            {rollupLabel(props.node.rollup)}
+          </span>
+        </Show>
+      </div>
+      <h2 class="detail-title">{props.node.title}</h2>
+
+      <div class="meta">
+        <span class="meta-item">приоритет: {props.node.priority}</span>
+        <For each={props.node.labels}>
+          {(l) => (
+            <span class="label-chip" style={{ "border-color": l.color || "#666" }}>
+              {l.name}
+            </span>
+          )}
+        </For>
+        <For each={props.node.assignees}>{(a) => <span class="assignee">@{a}</span>}</For>
+      </div>
+
+      {/* Документация ноды. Сейчас один текст; структурные блоки (идея/концепция/…) — след. итерация. */}
+      <section class="detail-section">
+        <h3>Документация</h3>
+        <Show when={props.node.description} fallback={<p class="muted">нет описания</p>}>
+          <p class="doc">{props.node.description}</p>
+        </Show>
+      </section>
+
+      {/* Зависимости — связи с другими нодами (в т.ч. чужой воркспейс, направленность). */}
+      <section class="detail-section">
+        <h3>Зависимости</h3>
+        <Show when={!relations.loading} fallback={<p class="muted">загрузка…</p>}>
+          <Show when={(relations() ?? []).length > 0} fallback={<p class="muted">нет связей</p>}>
+            <ul class="dep-list">
+              <For each={relations()}>
+                {(rel) => (
+                  <li class="dep" classList={{ cross: rel.cross_workspace, waiting: isWaiting(rel) }}>
+                    <span class="rel-kind">{rel.kind}</span>
+                    <span class="dep-text">{relationLabel(rel)}</span>
+                    <span class="dep-title muted">{rel.other.title}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </Show>
+      </section>
+
+      {/* История ноды (typed timeline). */}
+      <section class="detail-section">
+        <h3>История</h3>
+        <Show when={!activity.loading} fallback={<p class="muted">загрузка…</p>}>
+          <Show when={(activity() ?? []).length > 0} fallback={<p class="muted">пусто</p>}>
+            <ul class="timeline">
+              <For each={activity()}>
+                {(a) => (
+                  <li class="event">
+                    <span class="event-time muted">{fmtTime(a.created_at)}</span>
+                    <span class="event-actor">@{a.actor}</span>
+                    <span class="event-kind">{activityLabel(a)}</span>
+                    <Show when={activityText(a)}>
+                      <span class="event-text">{activityText(a)}</span>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </Show>
+      </section>
+    </aside>
+  );
+}

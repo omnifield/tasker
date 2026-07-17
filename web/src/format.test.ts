@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { apiUrl, authHeaders } from "./api";
-import type { RelationView, Rollup } from "./api";
-import { relationLabel, rollupColor, rollupLabel } from "./format";
+import type { Activity, RelationView, Rollup, Status } from "./api";
+import {
+  activityLabel,
+  activityText,
+  fmtTime,
+  isWaiting,
+  relationLabel,
+  rollupColor,
+  rollupLabel,
+  statusColor,
+  statusName,
+} from "./format";
 
 describe("apiUrl", () => {
   it("клеит путь к door-базе с нормализацией слэша", () => {
@@ -56,5 +66,58 @@ describe("relationLabel", () => {
       other: { ...other, key: "TASK-2", workspace_key: "TASK" }, cross_workspace: false, created_at: "",
     };
     expect(relationLabel(rel)).toBe("связан с TASK-2");
+  });
+
+  const mk = (kind: string, direction: "outgoing" | "incoming"): RelationView => ({
+    id: "r", kind, direction, from_node: "a", to_node: "b", other, cross_workspace: false, created_at: "",
+  });
+
+  it("isWaiting: исходящее depends_on и входящее blocks — ждёт", () => {
+    expect(isWaiting(mk("depends_on", "outgoing"))).toBe(true);
+    expect(isWaiting(mk("blocks", "incoming"))).toBe(true);
+    expect(isWaiting(mk("blocks", "outgoing"))).toBe(false);
+    expect(isWaiting(mk("relates", "outgoing"))).toBe(false);
+  });
+});
+
+describe("status helpers", () => {
+  const st = (over: Partial<Status>): Status =>
+    ({ id: "s", workspace_id: "w", category: "todo", name: "Todo", color: "", position: 0, ...over });
+
+  it("statusColor: кастомный цвет > цвет категории > backlog", () => {
+    expect(statusColor(st({ color: "#123456" }))).toBe("#123456");
+    expect(statusColor(st({ color: "", category: "done" }))).toBe("#2ecc71");
+    expect(statusColor(undefined)).toBe(rollupColor("backlog"));
+  });
+
+  it("statusName: имя или «—» без статуса", () => {
+    expect(statusName(st({ name: "In Progress" }))).toBe("In Progress");
+    expect(statusName(undefined)).toBe("—");
+  });
+});
+
+describe("fmtTime", () => {
+  it("RFC3339 → компактно", () => {
+    expect(fmtTime("2026-07-17T19:39:58.123Z")).toBe("2026-07-17 19:39");
+  });
+  it("мусор — как есть", () => {
+    expect(fmtTime("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("activity helpers", () => {
+  const act = (over: Partial<Activity>): Activity =>
+    ({ id: "a", node_id: "n", actor: "claude", kind: "commented", created_at: "", ...over });
+
+  it("activityLabel: известный kind → человекочитаемо, иначе сам kind", () => {
+    expect(activityLabel(act({ kind: "commented" }))).toBe("комментарий");
+    expect(activityLabel(act({ kind: "status_changed" }))).toBe("сменил статус");
+    expect(activityLabel(act({ kind: "weird" }))).toBe("weird");
+  });
+
+  it("activityText: тянет text из data, иначе пусто", () => {
+    expect(activityText(act({ data: { text: "привет" } }))).toBe("привет");
+    expect(activityText(act({ data: { other: 1 } }))).toBe("");
+    expect(activityText(act({ data: undefined }))).toBe("");
   });
 });
