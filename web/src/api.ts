@@ -72,6 +72,26 @@ export interface RelationView {
   created_at: string;
 }
 
+// Status — per-workspace статус: фикс-категория + кастомные name/color.
+export interface Status {
+  id: string;
+  workspace_id: string;
+  category: string;
+  name: string;
+  color: string;
+  position: number;
+}
+
+// Activity — запись timeline (created/status_changed/assigned/relation_added/commented/…).
+export interface Activity {
+  id: string;
+  node_id: string;
+  actor: string;
+  kind: string;
+  data?: unknown;
+  created_at: string;
+}
+
 // --- чистые хелперы (юнит-тестируемы без сети) -----------------------------
 
 // apiUrl клеит путь к door-базе (нормализует ведущий слэш).
@@ -96,4 +116,6 @@ async function get<T>(path: string): Promise<T> {
 
 export const listWorkspaces = () => get<Workspace[]>("/workspaces");
 export const workspaceTree = (ws: string) => get<TreeNode[]>(`/workspaces/${ws}/tree`);
+export const listStatuses = (ws: string) => get<Status[]>(`/workspaces/${ws}/statuses`);
 export const nodeRelations = (key: string) => get<RelationView[]>(`/nodes/${key}/relations`);
+export const nodeActivity = (key: string) => get<Activity[]>(`/nodes/${key}/activity`);
