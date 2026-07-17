@@ -40,6 +40,8 @@ FK enforce'им в сервис-слое (Jira-урок: не полагатьс
 
 ## REST API (`/tasker/*`)
 
+> Полный контракт для ведения продукта (payload'ы, формы ответов, quickstart) — **[`docs/api.md`](docs/api.md)**.
+
 Дверь omnifield-hub: `/api/tasker/…` → rewrite → `tasker:8030/tasker/…`. Auth — token-stub
 (`Authorization: Bearer <handle>`); `/tasker/healthz` без auth. Bind `0.0.0.0` (G1).
 
