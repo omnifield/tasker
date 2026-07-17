@@ -2,7 +2,7 @@
   {
     "name": "backend",
     "cwd": ".",
-    "command": "TASKER_PORT=8030 TASKER_DB=/data/tasker/tasker.db go run ./cmd/tasker",
+    "command": "env TASKER_PORT=8030 TASKER_DB=/data/tasker/tasker.db go run ./cmd/tasker",
     "port": 8030,
     "healthUrl": "http://localhost:8030/tasker/healthz",
     "probeTimeoutMs": 120000
