@@ -1,0 +1,5 @@
+# Standalone pnpm-воркспейс tasker-фронта (web-ci: working-directory=web). Разрешаем сборку
+# нативного бинаря esbuild (транзитив vite/vitest) — иначе pnpm блокирует build-скрипт и
+# `pnpm run` падает на dep-status-проверке.
+allowBuilds:
+  esbuild: true

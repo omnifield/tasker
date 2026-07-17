@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/omnifield/tasker/internal/service"
 )
@@ -207,6 +208,39 @@ func (a *API) handleListChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, kids)
+}
+
+// handleGetNodeTree — узел + всё поддерево (subtree-fetch). ?depth=N ограничивает глубину.
+func (a *API) handleGetNodeTree(w http.ResponseWriter, r *http.Request) {
+	tree, err := a.svc.GetSubtree(r.Context(), r.PathValue("key"), parseDepth(r))
+	if err != nil {
+		a.writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// handleGetWorkspaceTree — корни workspace + их поддеревья. ?depth=N ограничивает глубину.
+func (a *API) handleGetWorkspaceTree(w http.ResponseWriter, r *http.Request) {
+	roots, err := a.svc.GetWorkspaceTree(r.Context(), r.PathValue("ws"), parseDepth(r))
+	if err != nil {
+		a.writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, roots)
+}
+
+// parseDepth читает ?depth=N (>=0 — лимит глубины поддерева); отсутствие/кривое -> -1 (без лимита).
+func parseDepth(r *http.Request) int {
+	v := r.URL.Query().Get("depth")
+	if v == "" {
+		return -1
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return -1
+	}
+	return n
 }
 
 // --- relations -------------------------------------------------------------

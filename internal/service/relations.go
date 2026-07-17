@@ -57,9 +57,11 @@ func (s *Service) AddRelation(ctx context.Context, fromIDOrKey string, in Create
 	return out, nil
 }
 
-// ListRelations — все связи узла (как источник И как цель).
-func (s *Service) ListRelations(ctx context.Context, idOrKey string) ([]Relation, error) {
-	out := []Relation{}
+// ListRelations — все связи узла (как источник И как цель), ОБОГАЩЁННЫЕ: направление
+// относительно узла + чужой конец (ws/key/title) + cross-ws флаг. Рёбра-зависимости НЕ
+// роллапятся (роллап — внутри дерева parent/child; кросс — только здесь).
+func (s *Service) ListRelations(ctx context.Context, idOrKey string) ([]RelationView, error) {
+	out := []RelationView{}
 	err := s.store.Tx(ctx, func(q *store.Queries) error {
 		n, err := s.resolveNode(ctx, q, idOrKey)
 		if err != nil {
@@ -70,11 +72,42 @@ func (s *Service) ListRelations(ctx context.Context, idOrKey string) ([]Relation
 			return err
 		}
 		for _, r := range rels {
-			out = append(out, mapRelation(r))
+			view, err := s.enrichRelation(ctx, q, n, r)
+			if err != nil {
+				return err
+			}
+			out = append(out, view)
 		}
 		return nil
 	})
 	return out, err
+}
+
+// enrichRelation обогащает связь относительно узла self: направление (self=from -> outgoing,
+// self=to -> incoming), «другой конец» с его workspace/key/title и cross-workspace флаг.
+func (s *Service) enrichRelation(ctx context.Context, q *store.Queries, self store.Node, r store.Relation) (RelationView, error) {
+	otherID, direction := r.ToNode, "outgoing"
+	if r.ToNode == self.ID {
+		otherID, direction = r.FromNode, "incoming"
+	}
+	other, err := q.GetNodeByID(ctx, otherID)
+	if err != nil {
+		return RelationView{}, err
+	}
+	ws, err := q.GetWorkspace(ctx, other.WorkspaceID)
+	if err != nil {
+		return RelationView{}, err
+	}
+	return RelationView{
+		ID: r.ID, Kind: r.Kind, Direction: direction,
+		FromNode: r.FromNode, ToNode: r.ToNode,
+		Other: RelatedNode{
+			ID: other.ID, Key: other.Key, Title: other.Title,
+			WorkspaceID: other.WorkspaceID, WorkspaceKey: ws.Key,
+		},
+		CrossWorkspace: other.WorkspaceID != self.WorkspaceID,
+		CreatedAt:      r.CreatedAt,
+	}, nil
 }
 
 // DeleteRelation удаляет связь по id.

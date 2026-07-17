@@ -188,6 +188,84 @@ func TestRelationsTypedAndCrossWorkspace(t *testing.T) {
 	}
 }
 
+func TestDependsOnDirectionAndEnrichedCrossWS(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t)
+	_, _ = svc.CreateWorkspace(ctx, service.CreateWorkspaceInput{Key: "PROD", Name: "Product"})
+	_, _ = svc.CreateWorkspace(ctx, service.CreateWorkspaceInput{Key: "INFRA", Name: "Infra"})
+	prod, _ := svc.CreateNode(ctx, "PROD", service.CreateNodeInput{Title: "roadmap item"})
+	infra, _ := svc.CreateNode(ctx, "INFRA", service.CreateNodeInput{Title: "universal-bridge"})
+
+	// PROD-узел зависит от чужого INFRA-узла (направленное depends_on: from=prod -> to=infra).
+	if _, err := svc.AddRelation(ctx, prod.Key, service.CreateRelationInput{ToNode: infra.Key, Kind: "depends_on"}); err != nil {
+		t.Fatalf("depends_on cross-ws: %v", err)
+	}
+
+	// со стороны PROD: outgoing depends_on на чужой INFRA-узел, обогащённый ws/key/title.
+	relsProd, err := svc.ListRelations(ctx, prod.Key)
+	if err != nil {
+		t.Fatalf("list prod: %v", err)
+	}
+	if len(relsProd) != 1 {
+		t.Fatalf("prod relations = %d, want 1", len(relsProd))
+	}
+	rp := relsProd[0]
+	if rp.Kind != "depends_on" || rp.Direction != "outgoing" || !rp.CrossWorkspace {
+		t.Fatalf("prod view = %+v, want depends_on/outgoing/cross", rp)
+	}
+	if rp.Other.Key != infra.Key || rp.Other.WorkspaceKey != "INFRA" || rp.Other.Title != "universal-bridge" {
+		t.Fatalf("prod.other = %+v, want %s/INFRA/universal-bridge", rp.Other, infra.Key)
+	}
+
+	// со стороны INFRA: та же связь видна как incoming (кто-то зависит от него).
+	relsInfra, _ := svc.ListRelations(ctx, infra.Key)
+	if len(relsInfra) != 1 || relsInfra[0].Direction != "incoming" || relsInfra[0].Other.WorkspaceKey != "PROD" {
+		t.Fatalf("infra view = %+v, want 1 incoming from PROD", relsInfra)
+	}
+}
+
+func TestSubtreeFetch(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t)
+	_, _ = svc.CreateWorkspace(ctx, service.CreateWorkspaceInput{Key: "TASK", Name: "T"})
+	root, _ := svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "root"})
+	child, _ := svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "child", ParentID: &root.Key})
+	_, _ = svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "grandchild", ParentID: &child.Key})
+
+	// Полное поддерево (без лимита): root -> child -> grandchild.
+	tree, err := svc.GetSubtree(ctx, root.Key, -1)
+	if err != nil {
+		t.Fatalf("subtree: %v", err)
+	}
+	if tree.Key != root.Key || len(tree.Children) != 1 {
+		t.Fatalf("root children = %d, want 1", len(tree.Children))
+	}
+	if len(tree.Children[0].Children) != 1 || tree.Children[0].Children[0].Title != "grandchild" {
+		t.Fatalf("grandchild missing under child: %+v", tree.Children[0])
+	}
+	// Обогащение доходит до листьев (rollup присутствует).
+	if tree.Rollup.Total != 1 {
+		t.Fatalf("root rollup.total = %d, want 1", tree.Rollup.Total)
+	}
+
+	// depth=1 — только прямые дети, без внуков.
+	shallow, _ := svc.GetSubtree(ctx, root.Key, 1)
+	if len(shallow.Children) != 1 || len(shallow.Children[0].Children) != 0 {
+		t.Fatalf("depth=1 leaked grandchildren: %+v", shallow.Children)
+	}
+	// depth=0 — только сам узел.
+	just, _ := svc.GetSubtree(ctx, root.Key, 0)
+	if len(just.Children) != 0 {
+		t.Fatalf("depth=0 children = %d, want 0", len(just.Children))
+	}
+
+	// workspace-tree — один корень с поддеревом.
+	roots, _ := svc.GetWorkspaceTree(ctx, "TASK", -1)
+	if len(roots) != 1 || roots[0].Key != root.Key || len(roots[0].Children) != 1 {
+		t.Fatalf("ws tree = %+v, want [root->child]", roots)
+	}
+}
+
 func TestActivityTimeline(t *testing.T) {
 	ctx := context.Background()
 	svc := newSvc(t)

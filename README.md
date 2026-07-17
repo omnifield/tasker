@@ -18,8 +18,9 @@
 - **Workspace** — группа-тир (продукт ИЛИ концерн), короткий `key`.
 - **Status** — per-workspace, фикс-категория (`backlog|todo|in_progress|done|canceled`) + name/color.
   Сид по одному статусу на категорию при создании workspace.
-- **Relation** — typed first-class связь (`blocks|relates|duplicate`), **cross-workspace допустима**
-  (parent/child — через `parent_id`, НЕ через relation).
+- **Relation** — typed first-class связь (`blocks|depends_on|relates|duplicate`), **cross-workspace
+  допустима** (роадмап-ребро на чужой/инфра-узел: `depends_on` направлен `from → to`). parent/child —
+  через `parent_id`, НЕ через relation. Рёбра-зависимости НЕ роллапятся (роллап — внутри дерева).
 - **Label** (m2m) + **Assignee** (актор: агент/человек).
 - **Activity** — typed timeline с 1-го дня (`created|status_changed|assigned|relation_added|commented`).
 
@@ -36,11 +37,13 @@ FK enforce'им в сервис-слое (Jira-урок: не полагатьс
 | GET·POST | `/tasker/workspaces` | список · создать |
 | GET | `/tasker/workspaces/{ws}` | workspace (dual-id) |
 | GET·POST | `/tasker/workspaces/{ws}/nodes` | список (фильтры `?parent=`, `?status=`) · создать |
+| GET | `/tasker/workspaces/{ws}/tree` | корни ws + поддеревья (обогащённые; `?depth=N`) |
 | GET·POST | `/tasker/workspaces/{ws}/statuses` | статусы · создать |
 | GET·POST | `/tasker/workspaces/{ws}/labels` | метки · создать |
 | GET·PATCH·DELETE | `/tasker/nodes/{key}` | узел (dual-id: UUID или key) |
 | GET | `/tasker/nodes/{key}/children` | прямые дети |
-| GET·POST | `/tasker/nodes/{key}/relations` | связи · добавить |
+| GET | `/tasker/nodes/{key}/tree` | узел + всё поддерево одним запросом (`?depth=N`) |
+| GET·POST | `/tasker/nodes/{key}/relations` | связи (обогащённые: направление + чужой ws/key/title + cross-ws) · добавить |
 | GET·POST | `/tasker/nodes/{key}/activity` | timeline · добавить (коммент) |
 | POST | `/tasker/nodes/{key}/labels` · DELETE `/…/labels/{id}` | навесить · снять метку |
 | POST | `/tasker/nodes/{key}/assignees` · DELETE `/…/assignees/{actor}` | назначить · снять |
@@ -48,6 +51,20 @@ FK enforce'им в сервис-слое (Jira-урок: не полагатьс
 
 Одна канон-схема питает и REST-ответ, и **webhook-payload** (события `create/update/remove`
 зеркалят сущность). v0-sink логирует; полноценная доставка — итерация 2.
+
+## Фронт (`web/`, read-first)
+
+Минимальный обзор «видеть дерево»: список workspaces → дерево узлов (subtree-fetch одним
+запросом) + роллап-бейджи + кросс-деп рёбра («зависит от `WS-key` (чужой)»). Только просмотр;
+создание/правка — следующая итерация. Стек — **vite + solid** на `@omnifield/vite-preset`
+(`base "/tasker/"` из манифеста, ноль хардкода). API — через дверь-контракт `/api/tasker/…`,
+token-stub `Bearer`.
+
+```sh
+pnpm -C web install
+pnpm -C web dev       # vite :5173 (base /tasker/); devbox: сервис `frontend`
+pnpm -C web test      # vitest (чистые хелперы); lint · typecheck · build — web-ci
+```
 
 ## Запуск
 

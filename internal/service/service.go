@@ -30,9 +30,11 @@ var statusCategories = map[string]bool{
 	"backlog": true, "todo": true, "in_progress": true, "done": true, "canceled": true,
 }
 
-// Валидные типы typed-relation (parent/child идёт через parent_id, НЕ сюда).
+// Валидные типы typed-relation (parent/child идёт через parent_id, НЕ сюда). Направленные
+// (from -> to): `blocks` (from блокирует to) и `depends_on` (from зависит от to — роадмап-ребро
+// на чужой/инфра-узел). Ненаправленные: `relates`, `duplicate`. Кросс-workspace допустим для всех.
 var relationKinds = map[string]bool{
-	"blocks": true, "relates": true, "duplicate": true,
+	"blocks": true, "depends_on": true, "relates": true, "duplicate": true,
 }
 
 // Service — фасад над store + webhook. now/newID инъектируемы для детерминизма в тестах.
