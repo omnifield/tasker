@@ -114,6 +114,50 @@ func TestWorkspaceNodeFlowOverHTTP(t *testing.T) {
 	}
 }
 
+func TestNodeTreeAndEnrichedRelationsOverHTTP(t *testing.T) {
+	srv := newServer(t)
+	_, _ = do(t, srv, "POST", "/tasker/workspaces", map[string]any{"key": "prod", "name": "P"})
+	_, _ = do(t, srv, "POST", "/tasker/workspaces", map[string]any{"key": "infra", "name": "I"})
+	_, root := do(t, srv, "POST", "/tasker/workspaces/PROD/nodes", map[string]any{"title": "root"})
+	_, _ = do(t, srv, "POST", "/tasker/workspaces/PROD/nodes", map[string]any{"title": "child", "parent_id": root["key"]})
+	_, infra := do(t, srv, "POST", "/tasker/workspaces/INFRA/nodes", map[string]any{"title": "bridge"})
+	rootKey := root["key"].(string)
+
+	// subtree-fetch: root + один ребёнок одним запросом.
+	st, tree := do(t, srv, "GET", "/tasker/nodes/"+rootKey+"/tree", nil)
+	if st != http.StatusOK {
+		t.Fatalf("tree = %d, want 200", st)
+	}
+	if kids, ok := tree["children"].([]any); !ok || len(kids) != 1 {
+		t.Fatalf("tree children = %v, want 1", tree["children"])
+	}
+
+	// cross-ws depends_on: PROD-root зависит от чужого INFRA-bridge.
+	if st, _ := do(t, srv, "POST", "/tasker/nodes/"+rootKey+"/relations",
+		map[string]any{"to_node": infra["key"], "kind": "depends_on"}); st != http.StatusCreated {
+		t.Fatalf("create relation = %d, want 201", st)
+	}
+
+	// обогащённый relations-ответ — массив; парсим вручную.
+	req, _ := http.NewRequest("GET", srv.URL+"/tasker/nodes/"+rootKey+"/relations", nil)
+	req.Header.Set("Authorization", "Bearer egor")
+	resp, _ := srv.Client().Do(req)
+	defer func() { _ = resp.Body.Close() }()
+	var rels []map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&rels)
+	if len(rels) != 1 {
+		t.Fatalf("relations = %d, want 1", len(rels))
+	}
+	r := rels[0]
+	if r["direction"] != "outgoing" || r["kind"] != "depends_on" || r["cross_workspace"] != true {
+		t.Fatalf("relation view = %v, want outgoing/depends_on/cross", r)
+	}
+	other, _ := r["other"].(map[string]any)
+	if other["workspace_key"] != "INFRA" || other["title"] != "bridge" {
+		t.Fatalf("other = %v, want INFRA/bridge", other)
+	}
+}
+
 func TestFilterNodesByParent(t *testing.T) {
 	srv := newServer(t)
 	_, _ = do(t, srv, "POST", "/tasker/workspaces", map[string]any{"key": "task", "name": "T"})

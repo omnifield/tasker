@@ -39,13 +39,37 @@ type Label struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-// Relation — typed first-class связь (cross-workspace допустима).
+// Relation — typed first-class связь (cross-workspace допустима). Сырая форма (ответ create).
 type Relation struct {
 	ID        string `json:"id"`
 	FromNode  string `json:"from_node"`
 	ToNode    string `json:"to_node"`
 	Kind      string `json:"kind"`
 	CreatedAt string `json:"created_at"`
+}
+
+// RelatedNode — снимок «другого конца» связи: чужой узел с workspace/key/title, чтобы срез
+// показал «заблокирован узлом INFRA-42 (чужой)» без второго запроса.
+type RelatedNode struct {
+	ID           string `json:"id"`
+	Key          string `json:"key"`
+	Title        string `json:"title"`
+	WorkspaceID  string `json:"workspace_id"`
+	WorkspaceKey string `json:"workspace_key"`
+}
+
+// RelationView — обогащённая связь ОТНОСИТЕЛЬНО запрошенного узла: направление (outgoing =
+// этот узел → other; incoming = other → этот узел — для направленных blocks/depends_on даёт
+// однозначное «A зависит от B»), обогащённый «другой конец» и явный cross-workspace флаг.
+type RelationView struct {
+	ID             string      `json:"id"`
+	Kind           string      `json:"kind"`
+	Direction      string      `json:"direction"`
+	FromNode       string      `json:"from_node"`
+	ToNode         string      `json:"to_node"`
+	Other          RelatedNode `json:"other"`
+	CrossWorkspace bool        `json:"cross_workspace"`
+	CreatedAt      string      `json:"created_at"`
 }
 
 // Activity — запись typed-timeline (kind=commented и т.п.). Data — произвольный JSON-payload.
@@ -74,6 +98,14 @@ type Node struct {
 	Rollup      Rollup   `json:"rollup"`
 	Labels      []Label  `json:"labels"`
 	Assignees   []string `json:"assignees"`
+}
+
+// TreeNode — узел + рекурсивно его поддерево (subtree-fetch: всё дерево одним запросом для
+// рисовки/догфуд-навигации). Каждый узел обогащён (rollup/labels/assignees); rollup.total —
+// число прямых детей. Кросс-деп рёбра сюда НЕ входят (только parent/child; кросс — relations).
+type TreeNode struct {
+	Node
+	Children []TreeNode `json:"children"`
 }
 
 // --- мапперы store -> домен -------------------------------------------------
