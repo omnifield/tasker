@@ -5,11 +5,14 @@ title: Tasker
 description: Дерево разработки — durable источник правды дизайна продуктов (рекурсивный узел + роллап)
 reach:
   routes:
-    # Фронт (vite+solid, read-first дерево) — listening-порт 5173. base "/tasker/" пресет берёт
-    # из ЭТОГО же маршрута (@omnifield/vite-preset, единый источник — не хардкодим в vite.config).
+    # Фронт (vite+solid, read-first дерево) — pass-through, SPA под base "/tasker/".
+    # Порт — фактический vite-listen ВНУТРИ контейнера tasker (подтверждён: 0.0.0.0:5173).
+    # base "/tasker/" пресет (@omnifield/vite-preset) берёт из ЭТОГО маршрута — не хардкодим в vite.config.
     - path: /tasker
       port: 5173
-    # Backend (Go) — контрактный порт registry/ports.md (нативный префикс /tasker/;
-    # rewrite /api/tasker → tasker:8030/tasker/ — зона hub-core, как chater).
+    # Backend (Go) — нативный префикс /tasker/; gateway снимает /api → tasker:8030/tasker/ (зона hub-core).
     - path: /api/tasker
       port: 8030
+integration:
+  scopes: [main]
+  spawnEligible: true

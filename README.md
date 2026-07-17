@@ -7,6 +7,18 @@
 
 Опора — `hub/patterns/task-manager-canon.md` (рыночный канон) + `briefs/tasker-founding-backend-v0.md`.
 
+## Маршруты (дверь хаба)
+
+Дверь omnifield-hub генерится из `omnifield.yaml` (контракт `@omnifield/contract-manifest`,
+`integration.scopes: [main]`, `spawnEligible: true`). Порты — фактический listen ВНУТРИ контейнера.
+
+| Маршрут | Порт (в контейнере) | Что |
+|---|---|---|
+| `/tasker/` | **5173** | фронт (vite+solid, pass-through SPA, base `/tasker/` из манифеста) |
+| `/api/tasker/…` | **8030** | backend (gateway снимает `/api` → `tasker:8030/tasker/…`) |
+
+Фронт-порт — контракт: изменение сообщаем координатору (запись в `registry/ports.md` — его зона).
+
 ## Модель
 
 - **Node** — рекурсивный type-less core (Issue-канон). `parent_id` (self-FK, nullable) = дерево.
