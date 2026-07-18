@@ -57,6 +57,15 @@ func (q *Queries) CreateLabel(ctx context.Context, arg CreateLabelParams) (Label
 	return i, err
 }
 
+const deleteNodeLabelsForNode = `-- name: DeleteNodeLabelsForNode :exec
+DELETE FROM node_labels WHERE node_id = ?
+`
+
+func (q *Queries) DeleteNodeLabelsForNode(ctx context.Context, nodeID string) error {
+	_, err := q.db.ExecContext(ctx, deleteNodeLabelsForNode, nodeID)
+	return err
+}
+
 const getLabel = `-- name: GetLabel :one
 SELECT id, workspace_id, name, color, created_at FROM labels WHERE id = ?
 `

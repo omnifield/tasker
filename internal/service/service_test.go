@@ -301,3 +301,48 @@ func TestDeleteNodeWithChildrenConflict(t *testing.T) {
 		t.Fatalf("delete-with-children err = %v, want ErrConflict", err)
 	}
 }
+
+func TestDeleteNodeCleansDependents(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t)
+	_, _ = svc.CreateWorkspace(ctx, service.CreateWorkspaceInput{Key: "TASK", Name: "T"})
+
+	// Минимальный репро: голый лист без явных зависимостей. У него всё равно есть
+	// activity=created — раньше это роняло удаление на FOREIGN KEY constraint (500).
+	leaf, _ := svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "leaf", Actor: "egor"})
+	if err := svc.DeleteNode(ctx, leaf.Key); err != nil {
+		t.Fatalf("delete bare leaf: %v", err)
+	}
+	if _, err := svc.GetNode(ctx, leaf.Key); !errors.Is(err, service.ErrNotFound) {
+		t.Fatalf("get deleted leaf err = %v, want ErrNotFound", err)
+	}
+
+	// Узел со всеми зависимостями: метка, ассайни, комментарий, связь на соседа.
+	peer, _ := svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "peer"})
+	n, _ := svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "rich", Actor: "egor"})
+	lbl, _ := svc.CreateLabel(ctx, "TASK", service.CreateLabelInput{Name: "frontend", Color: "#8e44ad"})
+	if _, err := svc.AddNodeLabel(ctx, n.Key, lbl.ID); err != nil {
+		t.Fatalf("attach label: %v", err)
+	}
+	if _, err := svc.AddAssignee(ctx, n.Key, "claude", "egor"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	if _, err := svc.AddRelation(ctx, n.Key, service.CreateRelationInput{ToNode: peer.Key, Kind: "blocks"}); err != nil {
+		t.Fatalf("relation: %v", err)
+	}
+	if _, err := svc.AddActivity(ctx, n.Key, service.AddActivityInput{Actor: "egor", Data: []byte(`{"text":"note"}`)}); err != nil {
+		t.Fatalf("comment: %v", err)
+	}
+
+	if err := svc.DeleteNode(ctx, n.Key); err != nil {
+		t.Fatalf("delete node with dependents: %v", err)
+	}
+	// Сосед цел, но связь на удалённый узел исчезла (почищена с обеих сторон).
+	if _, err := svc.GetNode(ctx, peer.Key); err != nil {
+		t.Fatalf("peer must survive: %v", err)
+	}
+	rels, _ := svc.ListRelations(ctx, peer.Key)
+	if len(rels) != 0 {
+		t.Fatalf("peer relations = %d, want 0 (dangling edge cleaned)", len(rels))
+	}
+}

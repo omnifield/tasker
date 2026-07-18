@@ -51,6 +51,21 @@ func (q *Queries) DeleteRelation(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteRelationsForNode = `-- name: DeleteRelationsForNode :exec
+DELETE FROM relations WHERE from_node = ? OR to_node = ?
+`
+
+type DeleteRelationsForNodeParams struct {
+	FromNode string
+	ToNode   string
+}
+
+// All links touching the node (either side) -- for node deletion cleanup.
+func (q *Queries) DeleteRelationsForNode(ctx context.Context, arg DeleteRelationsForNodeParams) error {
+	_, err := q.db.ExecContext(ctx, deleteRelationsForNode, arg.FromNode, arg.ToNode)
+	return err
+}
+
 const getRelation = `-- name: GetRelation :one
 SELECT id, from_node, to_node, kind, created_at FROM relations WHERE id = ?
 `
