@@ -225,7 +225,9 @@ func (s *Service) UpdateNode(ctx context.Context, idOrKey string, in UpdateNodeI
 }
 
 // DeleteNode удаляет узел. Запрещаем удаление узла с детьми (иначе осиротим поддерево —
-// app-level FK enforce). Метки/ассайни/активность узла чистим в той же транзакции.
+// app-level FK enforce). Зависимые строки (relations обеих сторон, метки, ассайни, activity)
+// чистим в той же транзакции: БД-FK — RESTRICT, а у узла всегда есть хотя бы activity=created,
+// поэтому без чистки удаление падает на FOREIGN KEY constraint.
 func (s *Service) DeleteNode(ctx context.Context, idOrKey string) error {
 	var deletedKey string
 	err := s.store.Tx(ctx, func(q *store.Queries) error {
@@ -239,6 +241,19 @@ func (s *Service) DeleteNode(ctx context.Context, idOrKey string) error {
 		}
 		if cnt > 0 {
 			return fmt.Errorf("%w: node %s has %d children; reparent or delete them first", ErrConflict, n.Key, cnt)
+		}
+		// Рёбра-зависимости узла (в обе стороны, в т.ч. cross-workspace) исчезают вместе с ним.
+		if err := q.DeleteRelationsForNode(ctx, store.DeleteRelationsForNodeParams{FromNode: n.ID, ToNode: n.ID}); err != nil {
+			return err
+		}
+		if err := q.DeleteNodeLabelsForNode(ctx, n.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteNodeAssigneesForNode(ctx, n.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteActivityForNode(ctx, n.ID); err != nil {
+			return err
 		}
 		deletedKey = n.Key
 		return q.DeleteNode(ctx, n.ID)

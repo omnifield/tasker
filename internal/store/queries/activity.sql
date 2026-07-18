@@ -5,3 +5,6 @@ RETURNING *;
 
 -- name: ListActivityForNode :many
 SELECT * FROM activity WHERE node_id = ? ORDER BY created_at, id;
+
+-- name: DeleteActivityForNode :exec
+DELETE FROM activity WHERE node_id = ?;

@@ -25,6 +25,15 @@ func (q *Queries) AddNodeAssignee(ctx context.Context, arg AddNodeAssigneeParams
 	return err
 }
 
+const deleteNodeAssigneesForNode = `-- name: DeleteNodeAssigneesForNode :exec
+DELETE FROM node_assignees WHERE node_id = ?
+`
+
+func (q *Queries) DeleteNodeAssigneesForNode(ctx context.Context, nodeID string) error {
+	_, err := q.db.ExecContext(ctx, deleteNodeAssigneesForNode, nodeID)
+	return err
+}
+
 const listNodeAssignees = `-- name: ListNodeAssignees :many
 SELECT actor FROM node_assignees WHERE node_id = ? ORDER BY created_at
 `
