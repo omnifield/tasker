@@ -1,4 +1,4 @@
-import { createResource, For, Show } from "solid-js";
+import { createMemo, createResource, For, Show } from "solid-js";
 import type { TreeNode } from "./api";
 import { nodeActivity, nodeRelations } from "./api";
 import {
@@ -6,6 +6,9 @@ import {
   activityText,
   fmtTime,
   isWaiting,
+  parseSections,
+  priorityColor,
+  priorityLabel,
   relationLabel,
   rollupColor,
   rollupLabel,
@@ -21,6 +24,7 @@ export function NodeDetail(props: { node: TreeNode }) {
   const status = () => tree.statusFor(props.node.status_id);
   const [relations] = createResource(() => props.node.key, nodeRelations);
   const [activity] = createResource(() => props.node.key, nodeActivity);
+  const sections = createMemo(() => parseSections(props.node.description));
 
   return (
     <aside class="detail">
@@ -38,7 +42,9 @@ export function NodeDetail(props: { node: TreeNode }) {
       <h2 class="detail-title">{props.node.title}</h2>
 
       <div class="meta">
-        <span class="meta-item">приоритет: {props.node.priority}</span>
+        <span class="prio" style={{ "border-color": priorityColor(props.node.priority), color: priorityColor(props.node.priority) }}>
+          {priorityLabel(props.node.priority)}
+        </span>
         <For each={props.node.labels}>
           {(l) => (
             <span class="label-chip" style={{ "border-color": l.color || "#666" }}>
@@ -49,11 +55,21 @@ export function NodeDetail(props: { node: TreeNode }) {
         <For each={props.node.assignees}>{(a) => <span class="assignee">@{a}</span>}</For>
       </div>
 
-      {/* Документация ноды. Сейчас один текст; структурные блоки (идея/концепция/…) — след. итерация. */}
+      {/* Документация ноды — секторы по Markdown-заголовкам (## …). Типизированные блоки-сущности
+          придут с канон-пресетом; пока лёгкий рендер: монолит без заголовков = один сектор. */}
       <section class="detail-section">
         <h3>Документация</h3>
         <Show when={props.node.description} fallback={<p class="muted">нет описания</p>}>
-          <p class="doc">{props.node.description}</p>
+          <For each={sections()}>
+            {(sec) => (
+              <Show when={sec.heading} fallback={<p class="doc">{sec.body}</p>}>
+                <details class="sector" open>
+                  <summary>{sec.heading}</summary>
+                  <p class="doc">{sec.body}</p>
+                </details>
+              </Show>
+            )}
+          </For>
         </Show>
       </section>
 

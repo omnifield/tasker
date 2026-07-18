@@ -78,6 +78,51 @@ export function activityLabel(a: Activity): string {
   return map[a.kind] ?? a.kind;
 }
 
+// --- приоритет (P0–P3, меньше = важнее) ------------------------------------
+
+// priorityLabel — числовой priority в метку P0/P1/… (меньше = важнее, 0 = топ).
+export function priorityLabel(p: number): string {
+  return `P${Math.max(0, Math.trunc(p))}`;
+}
+
+// priorityColor — цвет бейджа: P0 срочно (красный) → P3+ приглушённый.
+const PRIORITY_COLORS = ["#e5534b", "#e08a3c", "#6ea8fe", "#8b93a3"];
+export function priorityColor(p: number): string {
+  const i = Math.min(PRIORITY_COLORS.length - 1, Math.max(0, Math.trunc(p)));
+  return PRIORITY_COLORS[i];
+}
+
+// --- секторы описания (лёгкий рендер, без ломки модели) ---------------------
+
+export interface Section {
+  heading: string | null; // null — вступление до первого ## заголовка
+  body: string;
+}
+
+// parseSections режет description на секторы по Markdown-заголовкам (## / ###). Текст до первого
+// заголовка — вступление (heading=null). Монолит без заголовков → один сектор (heading=null).
+export function parseSections(text: string): Section[] {
+  const out: Section[] = [];
+  let cur: Section | null = null;
+  const flush = () => {
+    if (cur && (cur.heading !== null || cur.body.trim())) {
+      out.push({ heading: cur.heading, body: cur.body.trim() });
+    }
+  };
+  for (const line of (text ?? "").split("\n")) {
+    const m = line.match(/^#{2,3}\s+(.+)$/);
+    if (m) {
+      flush();
+      cur = { heading: m[1].trim(), body: "" };
+    } else {
+      if (!cur) cur = { heading: null, body: "" };
+      cur.body += line + "\n";
+    }
+  }
+  flush();
+  return out;
+}
+
 // activityText — текст комментария из data (kind=commented кладёт {text}); иначе пусто.
 export function activityText(a: Activity): string {
   if (a.data && typeof a.data === "object" && "text" in a.data) {

@@ -248,6 +248,17 @@ body {
   white-space: nowrap;
 }
 
+.prio {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 0.01rem 0.3rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+}
+
 .label-dot {
   width: 0.6rem;
   height: 0.6rem;
@@ -326,6 +337,36 @@ body {
 .doc {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.sector {
+  margin: 0 0 0.5rem;
+}
+
+.sector > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.15rem 0;
+  list-style: none;
+}
+
+.sector > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sector > summary::before {
+  content: "▾ ";
+  color: var(--muted);
+}
+
+.sector:not([open]) > summary::before {
+  content: "▸ ";
+}
+
+.sector .doc {
+  margin: 0.2rem 0 0.5rem 0.9rem;
+  color: var(--text);
 }
 
 .dep-list,

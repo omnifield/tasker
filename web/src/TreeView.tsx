@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import type { TreeNode } from "./api";
-import { rollupColor, rollupLabel, statusColor, statusName } from "./format";
+import { priorityColor, priorityLabel, rollupColor, rollupLabel, statusColor, statusName } from "./format";
 import { useTree } from "./treeCtx";
 
 // NodeRow — рекурсивная строка роадмап-дерева (read-first): раскрытие детей, собственный статус,
@@ -28,6 +28,9 @@ export function NodeRow(props: { node: TreeNode; depth: number }) {
         </button>
 
         <button class="node-main" onClick={() => tree.select(props.node)}>
+          <span class="prio" style={{ "border-color": priorityColor(props.node.priority), color: priorityColor(props.node.priority) }}>
+            {priorityLabel(props.node.priority)}
+          </span>
           <span class="key">{props.node.key}</span>
           <span class="title">{props.node.title}</span>
 
