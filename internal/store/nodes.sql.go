@@ -166,7 +166,7 @@ func (q *Queries) ListChildStatusCategories(ctx context.Context, parentID sql.Nu
 }
 
 const listChildren = `-- name: ListChildren :many
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE parent_id = ? ORDER BY seq
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE parent_id = ? ORDER BY priority, seq
 `
 
 func (q *Queries) ListChildren(ctx context.Context, parentID sql.NullString) ([]Node, error) {
@@ -205,12 +205,12 @@ func (q *Queries) ListChildren(ctx context.Context, parentID sql.NullString) ([]
 }
 
 const listNodesByWorkspace = `-- name: ListNodesByWorkspace :many
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE workspace_id = ? ORDER BY seq
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE workspace_id = ? ORDER BY priority, seq
 `
 
-// Flat list of a workspace's nodes (ordered by seq). parent/status filters are
-// applied in-memory by the service layer (v0 scale; keeps SQL portable, no
-// engine-specific dynamic SQL).
+// Flat list of a workspace's nodes. Ordered by priority (lower = higher priority,
+// P0 first), then seq for stable tie-break. parent/status filters are applied
+// in-memory by the service layer (v0 scale; keeps SQL portable, no dynamic SQL).
 func (q *Queries) ListNodesByWorkspace(ctx context.Context, workspaceID string) ([]Node, error) {
 	rows, err := q.db.QueryContext(ctx, listNodesByWorkspace, workspaceID)
 	if err != nil {
@@ -247,7 +247,7 @@ func (q *Queries) ListNodesByWorkspace(ctx context.Context, workspaceID string) 
 }
 
 const listRootNodes = `-- name: ListRootNodes :many
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE workspace_id = ? AND parent_id IS NULL ORDER BY seq
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE workspace_id = ? AND parent_id IS NULL ORDER BY priority, seq
 `
 
 func (q *Queries) ListRootNodes(ctx context.Context, workspaceID string) ([]Node, error) {

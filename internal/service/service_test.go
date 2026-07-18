@@ -302,6 +302,35 @@ func TestDeleteNodeWithChildrenConflict(t *testing.T) {
 	}
 }
 
+func TestChildrenOrderedByPriority(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t)
+	_, _ = svc.CreateWorkspace(ctx, service.CreateWorkspaceInput{Key: "TASK", Name: "T"})
+	root, _ := svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "root"})
+
+	// Создаём в порядке приоритетов 3,0,1 — ожидаем выдачу по возрастанию (P0 первым).
+	_, _ = svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "p3", ParentID: &root.Key, Priority: 3})
+	_, _ = svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "p0", ParentID: &root.Key, Priority: 0})
+	_, _ = svc.CreateNode(ctx, "TASK", service.CreateNodeInput{Title: "p1", ParentID: &root.Key, Priority: 1})
+
+	kids, err := svc.ListChildren(ctx, root.Key)
+	if err != nil {
+		t.Fatalf("children: %v", err)
+	}
+	got := []string{kids[0].Title, kids[1].Title, kids[2].Title}
+	want := []string{"p0", "p1", "p3"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("children order = %v, want %v (priority asc)", got, want)
+		}
+	}
+	// В поддереве порядок тот же.
+	tree, _ := svc.GetSubtree(ctx, root.Key, -1)
+	if tree.Children[0].Title != "p0" || tree.Children[2].Title != "p3" {
+		t.Fatalf("subtree order = %v, want p0..p3", []string{tree.Children[0].Title, tree.Children[1].Title, tree.Children[2].Title})
+	}
+}
+
 func TestDeleteNodeCleansDependents(t *testing.T) {
 	ctx := context.Background()
 	svc := newSvc(t)

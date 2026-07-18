@@ -6,6 +6,8 @@ import {
   activityText,
   fmtTime,
   isWaiting,
+  parseSections,
+  priorityLabel,
   relationLabel,
   rollupColor,
   rollupLabel,
@@ -102,6 +104,32 @@ describe("fmtTime", () => {
   });
   it("мусор — как есть", () => {
     expect(fmtTime("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("priorityLabel", () => {
+  it("число → P-метка, негатив клампится в P0", () => {
+    expect(priorityLabel(0)).toBe("P0");
+    expect(priorityLabel(2)).toBe("P2");
+    expect(priorityLabel(-1)).toBe("P0");
+  });
+});
+
+describe("parseSections", () => {
+  it("монолит без заголовков → один сектор heading=null", () => {
+    const s = parseSections("просто текст\nвторая строка");
+    expect(s).toHaveLength(1);
+    expect(s[0].heading).toBeNull();
+    expect(s[0].body).toBe("просто текст\nвторая строка");
+  });
+  it("## заголовки → секторы; текст до первого = вступление", () => {
+    const s = parseSections("интро\n## Идея\nтело идеи\n## DoD\nкритерий");
+    expect(s.map((x) => x.heading)).toEqual([null, "Идея", "DoD"]);
+    expect(s[1].body).toBe("тело идеи");
+    expect(s[2].body).toBe("критерий");
+  });
+  it("пустое описание → []", () => {
+    expect(parseSections("")).toEqual([]);
   });
 });
 
