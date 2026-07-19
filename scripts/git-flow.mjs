@@ -23,7 +23,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -94,11 +94,26 @@ export function mergeFlag(merge) {
 
 const RULESET_NAME = "omnifield-git-flow";
 
-// Стек → имя required-check (= имя job'а CI-caller'а per stack; зеркалит template.json.ci.jobs:
-// go→go-ci "go", node→node-ci "node", frontend→web-ci "web"). "from-stack" тянет отсюда.
-export function stackChecks(stacks) {
-  const map = { go: "go", node: "node", frontend: "web" };
-  return stacks.map((s) => map[s]).filter(Boolean);
+// Required-checks потребителя = ИМЕНА job'ов из его .github/workflows/ci.yml — actual CI (что
+// РЕАЛЬНО прогоняется) = источник правды (DEVOPSER-114 #1). НЕ читаем devopser-специфику
+// (platform/repo-flow.json в потребителе НЕТ → был фолбэк на [go], недосчёт web-CI). Job = ключ
+// ровно с 2-пробельным отступом под `jobs:` (zero-dep разбор, без YAML-парсера).
+export function ciJobNames(root) {
+  const ci = join(root, ".github/workflows/ci.yml");
+  if (!existsSync(ci)) return [];
+  const names = [];
+  let inJobs = false;
+  for (const line of readFileSync(ci, "utf8").split("\n")) {
+    if (/^jobs:\s*$/.test(line)) {
+      inJobs = true;
+      continue;
+    }
+    if (!inJobs) continue;
+    const m = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
+    if (m) names.push(m[1]);
+    else if (/^\S/.test(line)) break; // новая top-level секция — конец jobs
+  }
+  return names;
 }
 
 // git-пресет (frame+defaults) + required-checks → desired ruleset-спека (GitHub rulesets API).
@@ -111,7 +126,18 @@ export function buildRulesetSpec(preset, checks) {
     rules.push({ type: "non_fast_forward" });
   }
   if (preset.frame?.prRequired)
-    rules.push({ type: "pull_request", parameters: { required_approving_review_count: 0 } });
+    // GitHub Rulesets API требует ПОЛНЫЙ набор pull_request-параметров (иначе 422; DEVOPSER-116).
+    // Дефолты сохраняют смысл frame.prRequired = мерж только через PR, без обязательных ревью.
+    rules.push({
+      type: "pull_request",
+      parameters: {
+        required_approving_review_count: 0,
+        dismiss_stale_reviews_on_push: false,
+        require_code_owner_review: false,
+        require_last_push_approval: false,
+        required_review_thread_resolution: false,
+      },
+    });
   if (checks.length)
     rules.push({
       type: "required_status_checks",
@@ -187,10 +213,14 @@ function mutate(exec, dry, kind, args, input) {
   return r;
 }
 
-// Чтение (read): ненулевой код → Error с контекстом.
+// Чтение (read): ненулевой код → Error с контекстом. Прокидываем stderr git/gh наружу
+// (DEVOPSER-114 #3: 403/auth-ошибки видны, а не схлопнуты в "code 1").
 function read(exec, kind, args, what) {
   const r = exec[kind](args);
-  if (r.code !== 0) throw new Error(`${what}: ${kind} ${args.join(" ")} → code ${r.code}`);
+  if (r.code !== 0)
+    throw new Error(
+      `${what}: ${kind} ${args.join(" ")} → ${(r.err || r.out || `code ${r.code}`).trim()}`,
+    );
   return r.out.trim();
 }
 
@@ -236,7 +266,11 @@ function pr(exec, preset, flags, { dry }) {
 // frame.prRequired: приземляем ТОЛЬКО через открытый PR.
 function requireOpenPr(exec) {
   const r = exec.gh(["pr", "view", "--json", "state", "-q", ".state"]);
-  if (r.code !== 0) throw new Error("frame.prRequired: открытого PR нет (git-flow pr).");
+  // stderr прокинут (#3): нет PR vs 403/auth — видно причину, не «code 1».
+  if (r.code !== 0)
+    throw new Error(
+      `frame.prRequired: PR не проверить — gh: ${(r.err || r.out || `code ${r.code}`).trim()}`,
+    );
   if (r.out.trim() !== "OPEN") throw new Error(`frame.prRequired: PR не OPEN (${r.out.trim()}).`);
 }
 
@@ -274,19 +308,6 @@ async function land(exec, preset, _flags, { dry }) {
   syncMain(exec, { dry });
 }
 
-// Стек репо (как init.mjs resolveStacks): repo-flow.json (девопсер-side, если есть) → факты.
-function detectStacks(root) {
-  const flow = join(root, "platform", "repo-flow.json");
-  if (existsSync(flow)) {
-    const entry = JSON.parse(readFileSync(flow, "utf8"))[basename(root)];
-    if (Array.isArray(entry?.stack) && entry.stack.length) return entry.stack;
-  }
-  const s = [];
-  if (existsSync(join(root, "go.mod"))) s.push("go");
-  if (existsSync(join(root, "package.json"))) s.push("node");
-  return s.length ? s : ["node"];
-}
-
 // Путь GitHub rulesets API текущего репо (nameWithOwner в переменной — литерала-плейсхолдера нет).
 function rulesetsApiPath(exec) {
   const nwo = read(
@@ -303,16 +324,14 @@ function rulesetsApiPath(exec) {
 // токен для apply — env-инжект (gh читает GH_TOKEN), НЕ хардкодится.
 async function rulesets(exec, preset, { apply, dry }) {
   const root = repoRoot(exec);
-  const stacks = detectStacks(root);
   const rc = preset.defaults?.requiredChecks;
-  const checks = rc === "from-stack" ? stackChecks(stacks) : Array.isArray(rc) ? rc : [];
+  // "from-stack" → required = actual CI-джобы потребителя (ci.yml), не devopser-реестр (#1).
+  const checks = rc === "from-stack" ? ciJobNames(root) : Array.isArray(rc) ? rc : [];
   const desired = buildRulesetSpec(preset, checks);
   const path = rulesetsApiPath(exec);
   const list = JSON.parse(read(exec, "gh", ["api", path], "rulesets") || "[]");
   const existing = list.find((r) => r.name === RULESET_NAME);
-  exec.log(
-    `[git-flow] ruleset ${RULESET_NAME}: стек [${stacks.join(", ")}] → checks [${checks.join(", ")}].`,
-  );
+  exec.log(`[git-flow] ruleset ${RULESET_NAME}: required checks из ci.yml [${checks.join(", ")}].`);
 
   if (apply) {
     const method = existing ? "PUT" : "POST";
