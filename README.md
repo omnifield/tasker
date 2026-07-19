@@ -52,6 +52,9 @@ FK enforce'им в сервис-слое (Jira-урок: не полагатьс
 | GET | `/tasker/workspaces/{ws}` | workspace (dual-id) |
 | GET·POST | `/tasker/workspaces/{ws}/nodes` | список (фильтры `?parent=`, `?status=`) · создать |
 | GET | `/tasker/workspaces/{ws}/tree` | корни ws + поддеревья (обогащённые; `?depth=N`) |
+| POST | `/tasker/workspaces/{ws}/proposals` | cross-product предложка в чужой ws (инбокс, `origin=proposal`) |
+| GET | `/tasker/workspaces/{ws}/inbox` | входящие предложки (вне роадмапа) |
+| POST | `/tasker/nodes/{key}/accept` · `/decline` | приземлить в роадмап (`origin→native`) · отклонить (`canceled`) |
 | GET·POST | `/tasker/workspaces/{ws}/statuses` | статусы · создать |
 | GET·POST | `/tasker/workspaces/{ws}/labels` | метки · создать |
 | GET·PATCH·DELETE | `/tasker/nodes/{key}` | узел (dual-id: UUID или key) |
