@@ -175,7 +175,14 @@ export function realExec() {
       const r = spawnSync(bin, args, { encoding: "utf8", ...opts });
       return { code: r.status ?? 1, out: r.stdout ?? "", err: r.stderr ?? "" };
     };
-  return { git: call("git"), gh: call("gh"), log: (m) => console.log(m) };
+  return {
+    git: call("git"),
+    gh: call("gh"),
+    // sleep — тот же inject-seam, что git/gh (тесты подсовывают no-op; иначе waitChecks не
+    // юнит-тестируем — реальный spawnSync("sleep") завис бы на CHECKS_INTERVAL_S).
+    sleep: (s) => spawnSync("sleep", [String(s)]),
+    log: (m) => console.log(m),
+  };
 }
 
 // Мутация (write git/gh): --dry-run печатает, не выполняет; ненулевой код → Error. Опц. input —
@@ -252,17 +259,50 @@ function requireOpenPr(exec) {
   if (r.out.trim() !== "OPEN") throw new Error(`frame.prRequired: PR не OPEN (${r.out.trim()}).`);
 }
 
-// Ждём зелёные checks. requiredChecks: "from-stack" → все проверки PR; массив → тоже ждём все
-// зелёными (набор из стека — надмножество). gh pr checks: exit 0 = все прошли, 8 = pending.
+// Ждёт ли пресет вообще проверок? "from-stack" или непустой массив → да (эти проверки ОБЯЗАНЫ
+// прийти зелёными); пустой массив / прочее → нет. Придаёт смысл исходу «no checks reported»:
+// ждём проверок vs проверок и не должно быть (DEVOPSER-115).
+export function expectsChecks(requiredChecks) {
+  if (requiredChecks === "from-stack") return true;
+  if (Array.isArray(requiredChecks)) return requiredChecks.length > 0;
+  return false;
+}
+
+// Ждём зелёные checks. Три исхода различаем ЯВНО (DEVOPSER-115 — догфуд land -114 вскрыл, что
+// сразу после `pr` проверки ещё НЕ зарегистрированы и старый код путал их с реальным fail'ом):
+//  • code 0                      → все проверки зелёные → return.
+//  • маркер «no checks reported» → проверки ЕЩЁ не зарегистрированы (транзиент; появятся через
+//    секунды) → ждём с ОТДЕЛЬНЫМ капом на регистрацию (CHECKS_REG_TRIES), не бесконечно. По
+//    исчерпании капа решает requiredChecks: пресет ждёт проверки (from-stack|непустой) а их нет →
+//    внятный throw (ожидаемое не пришло); пресет проверок не ждёт → «no checks» = успех, return.
+//  • code 8 (pending)            → проверки есть, идут → ждём (CHECKS_TRIES).
+//  • иначе                       → проверки есть, но не зелёные → throw (реальный fail; не ослабляем).
+// Маркер ловим по СТРОКЕ вывода gh, НЕ по exit-code: gh отдаёт «no checks» generic-кодом (не 8),
+// неотличимым по числу от реального fail'а (сверено: gh 2.96 «no checks reported on the '<branch>'»).
 const CHECKS_TRIES = 60;
 const CHECKS_INTERVAL_S = 10;
-function waitChecks(exec, _requiredChecks) {
+const CHECKS_REG_TRIES = 12; // отдельный кап на РЕГИСТРАЦИЮ проверок (≈2 мин), не бесконечно.
+const NO_CHECKS_RE = /no checks reported/i;
+export function waitChecks(exec, requiredChecks) {
+  let reg = 0; // сколько итераций подряд видели «no checks reported» — кап на регистрацию.
   for (let i = 0; i < CHECKS_TRIES; i++) {
     const r = exec.gh(["pr", "checks"]);
-    if (r.code === 0) return;
+    if (r.code === 0) return; // все зелёные
+    if (NO_CHECKS_RE.test(`${r.out}\n${r.err}`)) {
+      if (++reg > CHECKS_REG_TRIES) {
+        if (expectsChecks(requiredChecks))
+          throw new Error(
+            `checks: ожидаемые проверки (${JSON.stringify(requiredChecks)}) не зарегистрировались за кап — «no checks reported» на PR.`,
+          );
+        return; // пресет проверок не ждёт → отсутствие проверок = успех.
+      }
+      exec.log("[git-flow] проверки ещё не зарегистрированы — ждём…");
+      exec.sleep(CHECKS_INTERVAL_S);
+      continue;
+    }
     if (r.code === 8) {
       exec.log("[git-flow] checks pending — ждём…");
-      spawnSync("sleep", [String(CHECKS_INTERVAL_S)]);
+      exec.sleep(CHECKS_INTERVAL_S);
       continue;
     }
     throw new Error(`checks не зелёные:\n${(r.out || r.err).trim()}`);
