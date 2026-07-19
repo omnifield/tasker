@@ -84,20 +84,25 @@ type Activity struct {
 
 // Node — рекурсивный узел + производный Rollup + метки/ассайни. key стабилен/immutable.
 type Node struct {
-	ID          string   `json:"id"`
-	WorkspaceID string   `json:"workspace_id"`
-	Key         string   `json:"key"`
-	Seq         int64    `json:"seq"`
-	ParentID    *string  `json:"parent_id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	StatusID    *string  `json:"status_id"`
-	Priority    int64    `json:"priority"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
-	Rollup      Rollup   `json:"rollup"`
-	Labels      []Label  `json:"labels"`
-	Assignees   []string `json:"assignees"`
+	ID          string  `json:"id"`
+	WorkspaceID string  `json:"workspace_id"`
+	Key         string  `json:"key"`
+	Seq         int64   `json:"seq"`
+	ParentID    *string `json:"parent_id"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	StatusID    *string `json:"status_id"`
+	Priority    int64   `json:"priority"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
+	// Origin: "native" (roadmap node) or "proposal" (cross-product suggestion in the inbox,
+	// not yet accepted into the roadmap). ProposedBy/SourceWs carry the proposal's provenance.
+	Origin     string   `json:"origin"`
+	ProposedBy string   `json:"proposed_by,omitempty"`
+	SourceWs   string   `json:"source_ws,omitempty"`
+	Rollup     Rollup   `json:"rollup"`
+	Labels     []Label  `json:"labels"`
+	Assignees  []string `json:"assignees"`
 }
 
 // TreeNode — узел + рекурсивно его поддерево (subtree-fetch: всё дерево одним запросом для
@@ -152,6 +157,7 @@ func baseNode(n store.Node) Node {
 		ParentID: nullToPtr(n.ParentID), Title: n.Title, Description: n.Description,
 		StatusID: nullToPtr(n.StatusID), Priority: n.Priority,
 		CreatedAt: n.CreatedAt, UpdatedAt: n.UpdatedAt,
+		Origin: n.Origin, ProposedBy: n.ProposedBy, SourceWs: n.SourceWs,
 		Labels: []Label{}, Assignees: []string{},
 	}
 }

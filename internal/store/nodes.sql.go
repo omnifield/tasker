@@ -10,6 +10,47 @@ import (
 	"database/sql"
 )
 
+const acceptProposalNode = `-- name: AcceptProposalNode :one
+UPDATE nodes SET parent_id = ?, status_id = ?, origin = 'native', updated_at = ? WHERE id = ?
+RETURNING id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws
+`
+
+type AcceptProposalNodeParams struct {
+	ParentID  sql.NullString
+	StatusID  sql.NullString
+	UpdatedAt string
+	ID        string
+}
+
+// Accept a proposal into the roadmap: flip origin to native and set the parent/status the
+// receiving architect chose. Stable key is preserved (inbound references stay valid).
+func (q *Queries) AcceptProposalNode(ctx context.Context, arg AcceptProposalNodeParams) (Node, error) {
+	row := q.db.QueryRowContext(ctx, acceptProposalNode,
+		arg.ParentID,
+		arg.StatusID,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	var i Node
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Seq,
+		&i.Key,
+		&i.ParentID,
+		&i.Title,
+		&i.Description,
+		&i.StatusID,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Origin,
+		&i.ProposedBy,
+		&i.SourceWs,
+	)
+	return i, err
+}
+
 const countChildren = `-- name: CountChildren :one
 SELECT COUNT(*) FROM nodes WHERE parent_id = ?
 `
@@ -22,9 +63,9 @@ func (q *Queries) CountChildren(ctx context.Context, parentID sql.NullString) (i
 }
 
 const createNode = `-- name: CreateNode :one
-INSERT INTO nodes (id, workspace_id, seq, key, parent_id, title, description, status_id, priority, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at
+INSERT INTO nodes (id, workspace_id, seq, key, parent_id, title, description, status_id, priority, origin, proposed_by, source_ws, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws
 `
 
 type CreateNodeParams struct {
@@ -37,6 +78,9 @@ type CreateNodeParams struct {
 	Description string
 	StatusID    sql.NullString
 	Priority    int64
+	Origin      string
+	ProposedBy  string
+	SourceWs    string
 	CreatedAt   string
 	UpdatedAt   string
 }
@@ -52,6 +96,9 @@ func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (Node, e
 		arg.Description,
 		arg.StatusID,
 		arg.Priority,
+		arg.Origin,
+		arg.ProposedBy,
+		arg.SourceWs,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -68,6 +115,44 @@ func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (Node, e
 		&i.Priority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Origin,
+		&i.ProposedBy,
+		&i.SourceWs,
+	)
+	return i, err
+}
+
+const declineProposalNode = `-- name: DeclineProposalNode :one
+UPDATE nodes SET status_id = ?, updated_at = ? WHERE id = ?
+RETURNING id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws
+`
+
+type DeclineProposalNodeParams struct {
+	StatusID  sql.NullString
+	UpdatedAt string
+	ID        string
+}
+
+// Decline a proposal: set the workspace's canceled status; origin stays 'proposal' so it stays
+// in inbox history, out of the roadmap.
+func (q *Queries) DeclineProposalNode(ctx context.Context, arg DeclineProposalNodeParams) (Node, error) {
+	row := q.db.QueryRowContext(ctx, declineProposalNode, arg.StatusID, arg.UpdatedAt, arg.ID)
+	var i Node
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Seq,
+		&i.Key,
+		&i.ParentID,
+		&i.Title,
+		&i.Description,
+		&i.StatusID,
+		&i.Priority,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Origin,
+		&i.ProposedBy,
+		&i.SourceWs,
 	)
 	return i, err
 }
@@ -82,7 +167,7 @@ func (q *Queries) DeleteNode(ctx context.Context, id string) error {
 }
 
 const getNodeByID = `-- name: GetNodeByID :one
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE id = ?
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNodeByID(ctx context.Context, id string) (Node, error) {
@@ -100,12 +185,15 @@ func (q *Queries) GetNodeByID(ctx context.Context, id string) (Node, error) {
 		&i.Priority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Origin,
+		&i.ProposedBy,
+		&i.SourceWs,
 	)
 	return i, err
 }
 
 const getNodeByKey = `-- name: GetNodeByKey :one
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE key = ?
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws FROM nodes WHERE key = ?
 `
 
 func (q *Queries) GetNodeByKey(ctx context.Context, key string) (Node, error) {
@@ -123,6 +211,9 @@ func (q *Queries) GetNodeByKey(ctx context.Context, key string) (Node, error) {
 		&i.Priority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Origin,
+		&i.ProposedBy,
+		&i.SourceWs,
 	)
 	return i, err
 }
@@ -166,7 +257,7 @@ func (q *Queries) ListChildStatusCategories(ctx context.Context, parentID sql.Nu
 }
 
 const listChildren = `-- name: ListChildren :many
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE parent_id = ? ORDER BY priority, seq
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws FROM nodes WHERE parent_id = ? ORDER BY priority, seq
 `
 
 func (q *Queries) ListChildren(ctx context.Context, parentID sql.NullString) ([]Node, error) {
@@ -190,6 +281,52 @@ func (q *Queries) ListChildren(ctx context.Context, parentID sql.NullString) ([]
 			&i.Priority,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Origin,
+			&i.ProposedBy,
+			&i.SourceWs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInboxNodes = `-- name: ListInboxNodes :many
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws FROM nodes WHERE workspace_id = ? AND origin = 'proposal' ORDER BY priority, seq
+`
+
+// Inbox: pending cross-product proposals of a workspace, awaiting accept/decline.
+func (q *Queries) ListInboxNodes(ctx context.Context, workspaceID string) ([]Node, error) {
+	rows, err := q.db.QueryContext(ctx, listInboxNodes, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Node
+	for rows.Next() {
+		var i Node
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Seq,
+			&i.Key,
+			&i.ParentID,
+			&i.Title,
+			&i.Description,
+			&i.StatusID,
+			&i.Priority,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Origin,
+			&i.ProposedBy,
+			&i.SourceWs,
 		); err != nil {
 			return nil, err
 		}
@@ -205,12 +342,13 @@ func (q *Queries) ListChildren(ctx context.Context, parentID sql.NullString) ([]
 }
 
 const listNodesByWorkspace = `-- name: ListNodesByWorkspace :many
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE workspace_id = ? ORDER BY priority, seq
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws FROM nodes WHERE workspace_id = ? AND origin = 'native' ORDER BY priority, seq
 `
 
-// Flat list of a workspace's nodes. Ordered by priority (lower = higher priority,
-// P0 first), then seq for stable tie-break. parent/status filters are applied
-// in-memory by the service layer (v0 scale; keeps SQL portable, no dynamic SQL).
+// Flat list of a workspace's roadmap nodes. Ordered by priority (lower = higher priority,
+// P0 first), then seq for stable tie-break. parent/status filters are applied in-memory by
+// the service layer (v0 scale; keeps SQL portable, no dynamic SQL). Proposals (origin!=native)
+// live only in the inbox, never the roadmap.
 func (q *Queries) ListNodesByWorkspace(ctx context.Context, workspaceID string) ([]Node, error) {
 	rows, err := q.db.QueryContext(ctx, listNodesByWorkspace, workspaceID)
 	if err != nil {
@@ -232,6 +370,9 @@ func (q *Queries) ListNodesByWorkspace(ctx context.Context, workspaceID string) 
 			&i.Priority,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Origin,
+			&i.ProposedBy,
+			&i.SourceWs,
 		); err != nil {
 			return nil, err
 		}
@@ -247,9 +388,11 @@ func (q *Queries) ListNodesByWorkspace(ctx context.Context, workspaceID string) 
 }
 
 const listRootNodes = `-- name: ListRootNodes :many
-SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at FROM nodes WHERE workspace_id = ? AND parent_id IS NULL ORDER BY priority, seq
+SELECT id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws FROM nodes WHERE workspace_id = ? AND parent_id IS NULL AND origin = 'native' ORDER BY priority, seq
 `
 
+// Roadmap roots (tree top level). Excludes un-accepted proposals (origin='proposal'): they are
+// parent-less like roots but must not surface in the roadmap until accepted.
 func (q *Queries) ListRootNodes(ctx context.Context, workspaceID string) ([]Node, error) {
 	rows, err := q.db.QueryContext(ctx, listRootNodes, workspaceID)
 	if err != nil {
@@ -271,6 +414,9 @@ func (q *Queries) ListRootNodes(ctx context.Context, workspaceID string) ([]Node
 			&i.Priority,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Origin,
+			&i.ProposedBy,
+			&i.SourceWs,
 		); err != nil {
 			return nil, err
 		}
@@ -289,7 +435,7 @@ const updateNode = `-- name: UpdateNode :one
 UPDATE nodes
 SET title = ?, description = ?, status_id = ?, priority = ?, parent_id = ?, updated_at = ?
 WHERE id = ?
-RETURNING id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at
+RETURNING id, workspace_id, seq, "key", parent_id, title, description, status_id, priority, created_at, updated_at, origin, proposed_by, source_ws
 `
 
 type UpdateNodeParams struct {
@@ -325,6 +471,9 @@ func (q *Queries) UpdateNode(ctx context.Context, arg UpdateNodeParams) (Node, e
 		&i.Priority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Origin,
+		&i.ProposedBy,
+		&i.SourceWs,
 	)
 	return i, err
 }

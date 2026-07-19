@@ -46,6 +46,9 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET /tasker/workspaces/{ws}/nodes", a.auth(a.handleListNodes))
 	mux.Handle("POST /tasker/workspaces/{ws}/nodes", a.auth(a.handleCreateNode))
 	mux.Handle("GET /tasker/workspaces/{ws}/tree", a.auth(a.handleGetWorkspaceTree))
+	// cross-product proposals: write into a foreign workspace's inbox; not the roadmap.
+	mux.Handle("POST /tasker/workspaces/{ws}/proposals", a.auth(a.handleCreateProposal))
+	mux.Handle("GET /tasker/workspaces/{ws}/inbox", a.auth(a.handleListInbox))
 	mux.Handle("GET /tasker/workspaces/{ws}/labels", a.auth(a.handleListLabels))
 	mux.Handle("POST /tasker/workspaces/{ws}/labels", a.auth(a.handleCreateLabel))
 	mux.Handle("GET /tasker/workspaces/{ws}/statuses", a.auth(a.handleListStatuses))
@@ -56,6 +59,9 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("PATCH /tasker/nodes/{key}", a.auth(a.handleUpdateNode))
 	mux.Handle("DELETE /tasker/nodes/{key}", a.auth(a.handleDeleteNode))
 	mux.Handle("GET /tasker/nodes/{key}/children", a.auth(a.handleListChildren))
+	// proposal gate: promote into the roadmap (accept) or reject (decline).
+	mux.Handle("POST /tasker/nodes/{key}/accept", a.auth(a.handleAcceptProposal))
+	mux.Handle("POST /tasker/nodes/{key}/decline", a.auth(a.handleDeclineProposal))
 	mux.Handle("GET /tasker/nodes/{key}/tree", a.auth(a.handleGetNodeTree))
 	mux.Handle("GET /tasker/nodes/{key}/relations", a.auth(a.handleListRelations))
 	mux.Handle("POST /tasker/nodes/{key}/relations", a.auth(a.handleCreateRelation))

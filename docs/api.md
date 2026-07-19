@@ -89,6 +89,24 @@ Authorization: Bearer <handle>
 `kind ∈ blocks · depends_on · relates · duplicate`. Направленные (`from → to`): `blocks` (from блокирует
 to), `depends_on` (from зависит от to). `to_node` — UUID или key любого workspace.
 
+### Предложки (cross-product inbox + гейт)
+Кросс-продукт наставления: архитектор ЛЮБОГО продукта пишет предложение в **чужой** workspace, но оно
+попадает **не в роадмап**, а в карантинную полосу «Входящие». В роадмап входит только через явный
+`accept` архитектора-получателя (он же выбирает, куда в дереве).
+
+| Метод · путь | Payload / примечание |
+|---|---|
+| `POST /tasker/workspaces/{ws}/proposals` | `{"title":"…"(required),"description":"…","priority":1,"source_ws":"DEV"}` → `201` Node. `origin=proposal`, без parent, `proposed_by` = Bearer-handle, `source_ws` — key своего ws (бэклинк). Получает стабильный key (напр. `BRAIN-42`). |
+| `GET /tasker/workspaces/{ws}/inbox` | входящие предложения ws (`origin=proposal`) — отдельно от роадмапа |
+| `POST /tasker/nodes/{key}/accept` | `{"parent_id":"BRAIN-1","status_id":"<id>"}` (тело опц.: без него — корень роадмапа, без статуса) → `200`. `origin→native`, reparent, статус; key сохраняется. Не-предложка → `400`. |
+| `POST /tasker/nodes/{key}/decline` | `{"comment":"…"}` (опц.) → `200`. Статус → `canceled`, `origin` остаётся `proposal` (история инбокса). Не-предложка → `400`. |
+
+Предложки (`origin=proposal`) **исключены** из `/tree` и `/nodes` (роадмап = `origin=native`), видны только в `/inbox`.
+
+**Гейт — agent-agnostic** (как git-flow): tasker энфорсит СТРУКТУРНЫЙ гейт (ничто не входит в роадмап
+без `accept`) и пишет `proposed_by`/actor; КТО вправе одобрять — концерн identity-моста (не tasker).
+Связка с зависимостью: часто предложка идёт вместе с cross-ws `blocks` на свой узел (`BRAIN-42 blocks DEV-7`).
+
 ### Activity / Labels / Assignees
 | Метод · путь | Payload |
 |---|---|
