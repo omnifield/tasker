@@ -5,7 +5,7 @@
 стабильные ссылки. Сейчас — бэк-фундамент: модель узла/дерева + REST API на готовой инфре.
 Позже: chater даёт разговорный слой (брифы = рефы на ноды tasker), UI — на своём фреймворке.
 
-Опора — `hub/patterns/task-manager-canon.md` (рыночный канон) + `briefs/tasker-founding-backend-v0.md`.
+Опора — `hub/patterns/task-manager-canon.md` (рыночный канон). Дизайн/ТЗ ведётся **нодами в самом tasker** (workspace `TSK`, догфуд) — не файлами.
 
 ## Маршруты (дверь хаба)
 

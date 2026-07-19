@@ -7,7 +7,7 @@ export default defineOmnifieldVite({
   plugins: [solid()],
   // DEV-ONLY: локально (без двери хаба) фронт :5173 бьёт в бэк :8030 напрямую, зеркаля дверь —
   // снимаем `/api`, нативный префикс `/tasker/`. В проде единый origin даёт дверь (:8080), proxy
-  // не участвует (только dev-server). См. briefs/tasker-backlog.md (dev-заметки).
+  // не участвует (только dev-server).
   server: {
     proxy: {
       "/api/tasker": {
