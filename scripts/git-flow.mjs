@@ -94,28 +94,6 @@ export function mergeFlag(merge) {
 
 const RULESET_NAME = "omnifield-git-flow";
 
-// Required-checks потребителя = ИМЕНА job'ов из его .github/workflows/ci.yml — actual CI (что
-// РЕАЛЬНО прогоняется) = источник правды (DEVOPSER-114 #1). НЕ читаем devopser-специфику
-// (platform/repo-flow.json в потребителе НЕТ → был фолбэк на [go], недосчёт web-CI). Job = ключ
-// ровно с 2-пробельным отступом под `jobs:` (zero-dep разбор, без YAML-парсера).
-export function ciJobNames(root) {
-  const ci = join(root, ".github/workflows/ci.yml");
-  if (!existsSync(ci)) return [];
-  const names = [];
-  let inJobs = false;
-  for (const line of readFileSync(ci, "utf8").split("\n")) {
-    if (/^jobs:\s*$/.test(line)) {
-      inJobs = true;
-      continue;
-    }
-    if (!inJobs) continue;
-    const m = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
-    if (m) names.push(m[1]);
-    else if (/^\S/.test(line)) break; // новая top-level секция — конец jobs
-  }
-  return names;
-}
-
 // git-пресет (frame+defaults) + required-checks → desired ruleset-спека (GitHub rulesets API).
 // frame.mainProtected → защита ветки по умолчанию (без удаления/force-push); frame.prRequired →
 // мерж только через PR; requiredChecks → required status checks. Ноль actor/ролей.
@@ -308,30 +286,61 @@ async function land(exec, preset, _flags, { dry }) {
   syncMain(exec, { dry });
 }
 
-// Путь GitHub rulesets API текущего репо (nameWithOwner в переменной — литерала-плейсхолдера нет).
-function rulesetsApiPath(exec) {
-  const nwo = read(
+// nameWithOwner текущего репо (в переменной — литерала-плейсхолдера {owner} нет).
+function repoNwo(exec) {
+  return read(
     exec,
     "gh",
     ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
     "репо",
   );
-  return `repos/${nwo}/rulesets`;
+}
+
+// Required-контексты = РЕАЛЬНЫЕ имена check-run'ов default-ветки (ground truth; DEVOPSER-117).
+// GitHub именует проверки reusable-caller'ов '<job> / <inner-job-name>', голых ключей job'а нет —
+// поэтому берём фактические check-run'ы, а не ключи ci.yml. Самокорректируется, не завязано на
+// внутренности reusable. Прогонов ещё нет → пусто (звонящий делает loud-warn, не молча ключи).
+function resolveCheckRunNames(exec, nwo) {
+  const branch = read(
+    exec,
+    "gh",
+    ["repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"],
+    "default-ветка",
+  );
+  const names = read(
+    exec,
+    "gh",
+    ["api", `repos/${nwo}/commits/${branch}/check-runs`, "-q", ".check_runs[].name"],
+    "check-runs",
+  );
+  return [
+    ...new Set(
+      names
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 // rulesets — материализатор enforcement из git-пресета. Дефолт = check (дрейф → loud-fail);
 // --apply применяет через gh api (идемпотентно: PUT если ruleset есть, иначе POST). Admin-scope
 // токен для apply — env-инжект (gh читает GH_TOKEN), НЕ хардкодится.
 async function rulesets(exec, preset, { apply, dry }) {
-  const root = repoRoot(exec);
+  const nwo = repoNwo(exec);
   const rc = preset.defaults?.requiredChecks;
-  // "from-stack" → required = actual CI-джобы потребителя (ci.yml), не devopser-реестр (#1).
-  const checks = rc === "from-stack" ? ciJobNames(root) : Array.isArray(rc) ? rc : [];
+  // "from-stack" → required = РЕАЛЬНЫЕ check-run имена репо (не ключи job'ов; DEVOPSER-117).
+  const checks =
+    rc === "from-stack" ? resolveCheckRunNames(exec, nwo) : Array.isArray(rc) ? rc : [];
+  if (rc === "from-stack" && checks.length === 0)
+    exec.log(
+      "[git-flow] ⚠ check-run'ов на default-ветке нет — required-checks ПУСТ. Прогони CI, затем rulesets --apply (иначе проверки не станут required).",
+    );
   const desired = buildRulesetSpec(preset, checks);
-  const path = rulesetsApiPath(exec);
+  const path = `repos/${nwo}/rulesets`;
   const list = JSON.parse(read(exec, "gh", ["api", path], "rulesets") || "[]");
   const existing = list.find((r) => r.name === RULESET_NAME);
-  exec.log(`[git-flow] ruleset ${RULESET_NAME}: required checks из ci.yml [${checks.join(", ")}].`);
+  exec.log(`[git-flow] ruleset ${RULESET_NAME}: required checks [${checks.join(", ")}].`);
 
   if (apply) {
     const method = existing ? "PUT" : "POST";
