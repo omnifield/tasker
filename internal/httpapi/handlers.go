@@ -410,3 +410,83 @@ func asNullableString(raw json.RawMessage) *string {
 	}
 	return &s
 }
+
+// --- cross-product proposals -----------------------------------------------
+
+// handleCreateProposal — архитектор пишет предложение в ЧУЖОЙ workspace (origin=proposal,
+// вне роадмапа). actor -> proposed_by; source_ws — key своего воркспейса (бэклинк).
+func (a *API) handleCreateProposal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Priority    int64  `json:"priority"`
+		SourceWs    string `json:"source_ws"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	n, err := a.svc.CreateProposal(r.Context(), r.PathValue("ws"), service.CreateProposalInput{
+		Title: body.Title, Description: body.Description, Priority: body.Priority,
+		SourceWs: body.SourceWs, Actor: actorOf(r),
+	})
+	if err != nil {
+		a.writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, n)
+}
+
+// handleListInbox — входящие предложения воркспейса (origin=proposal), отдельно от роадмапа.
+func (a *API) handleListInbox(w http.ResponseWriter, r *http.Request) {
+	nodes, err := a.svc.ListInbox(r.Context(), r.PathValue("ws"))
+	if err != nil {
+		a.writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, nodes)
+}
+
+// handleAcceptProposal — приземлить предложение в роадмап (origin->native + parent/status).
+// Тело опционально: без него parent=корень, status=нет.
+func (a *API) handleAcceptProposal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ParentID *string `json:"parent_id"`
+		StatusID *string `json:"status_id"`
+	}
+	if r.ContentLength > 0 {
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	n, err := a.svc.AcceptProposal(r.Context(), r.PathValue("key"), service.AcceptInput{
+		ParentID: body.ParentID, StatusID: body.StatusID, Actor: actorOf(r),
+	})
+	if err != nil {
+		a.writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, n)
+}
+
+// handleDeclineProposal — отклонить предложение (canceled + коммент; origin остаётся proposal).
+func (a *API) handleDeclineProposal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Comment string `json:"comment"`
+	}
+	if r.ContentLength > 0 {
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	n, err := a.svc.DeclineProposal(r.Context(), r.PathValue("key"), service.DeclineInput{
+		Comment: body.Comment, Actor: actorOf(r),
+	})
+	if err != nil {
+		a.writeServiceError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, n)
+}

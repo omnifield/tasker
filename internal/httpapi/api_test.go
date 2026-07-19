@@ -175,3 +175,31 @@ func TestFilterNodesByParent(t *testing.T) {
 		t.Fatalf("parent=none returned %v, want [TASK-1]", roots)
 	}
 }
+
+// TestProposalHTTPFlow — POST proposal -> inbox quarantine -> accept promotes -> re-accept 400.
+func TestProposalHTTPFlow(t *testing.T) {
+	srv := newServer(t)
+	do(t, srv, "POST", "/tasker/workspaces", map[string]any{"key": "BRAIN", "name": "brainer"})
+
+	st, body := do(t, srv, "POST", "/tasker/workspaces/BRAIN/proposals", map[string]any{
+		"title": "expose agent-session API", "source_ws": "DEV",
+	})
+	if st != http.StatusCreated {
+		t.Fatalf("create proposal status = %d, body %v", st, body)
+	}
+	if body["origin"] != "proposal" || body["proposed_by"] != "egor" {
+		t.Fatalf("proposal body = %v", body)
+	}
+	key, _ := body["key"].(string)
+
+	// accept (empty body -> roadmap root, no status) promotes to native.
+	st, body = do(t, srv, "POST", "/tasker/nodes/"+key+"/accept", map[string]any{})
+	if st != http.StatusOK || body["origin"] != "native" {
+		t.Fatalf("accept status=%d body=%v", st, body)
+	}
+
+	// re-accept a now-native node -> 400.
+	if st, _ := do(t, srv, "POST", "/tasker/nodes/"+key+"/accept", map[string]any{}); st != http.StatusBadRequest {
+		t.Fatalf("re-accept status = %d, want 400", st)
+	}
+}

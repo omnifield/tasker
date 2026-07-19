@@ -37,6 +37,9 @@ type Node struct {
 	Priority    int64
 	CreatedAt   string
 	UpdatedAt   string
+	Origin      string
+	ProposedBy  string
+	SourceWs    string
 }
 
 type NodeAssignee struct {

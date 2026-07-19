@@ -77,7 +77,9 @@ func (s *Service) CreateNode(ctx context.Context, wsIDOrKey string, in CreateNod
 		node, err := q.CreateNode(ctx, store.CreateNodeParams{
 			ID: s.newID(), WorkspaceID: ws.ID, Seq: seq, Key: key,
 			ParentID: parent, Title: in.Title, Description: in.Description,
-			StatusID: status, Priority: in.Priority, CreatedAt: now, UpdatedAt: now,
+			StatusID: status, Priority: in.Priority,
+			Origin: originNative, ProposedBy: "", SourceWs: "",
+			CreatedAt: now, UpdatedAt: now,
 		})
 		if err != nil {
 			return err
