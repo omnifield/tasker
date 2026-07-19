@@ -1,0 +1,22 @@
+{
+  "$comment": "git-flow пресет (DEVOPSER-103) — ВЕНДОРЕННЫЙ managed-файл (DEVOPSER-113): доставляется init'ом в КАЖДЫЙ репо (mode:exact), НЕ npm — language-agnostic (любой стек, ноль node_modules; go-primary/polyglot тоже получают). Чистые данные, agent-agnostic (НОЛЬ actor/owner/ролей/прав — концерн ПОТРЕБИТЕЛЯ). omnifield = метаданные пресета для движка (target:git-flow); frame = frozen рамка (DEVOPSER-95); defaults = overridable докрутка. Версионирование = managed drift (bump эталона → drift-check краснеет → sync), как git-flow.mjs.",
+  "omnifield": {
+    "kind": "preset",
+    "slot": "git-flow",
+    "stack": "any",
+    "mechanism": "read",
+    "target": "git-flow"
+  },
+  "frame": {
+    "$comment": "FROZEN — рамка флоу, выключить нельзя (DEVOPSER-95).",
+    "mainProtected": true,
+    "prRequired": true
+  },
+  "defaults": {
+    "$comment": "OVERRIDABLE — дефолты внутри рамки; потребитель докручивает точечно.",
+    "merge": "squash",
+    "branchNaming": "^(feat|fix|chore|docs|refactor|test|perf|build|ci)/[a-z0-9._-]+$",
+    "requiredChecks": "from-stack",
+    "commitConvention": "conventional"
+  }
+}
