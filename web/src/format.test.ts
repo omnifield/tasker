@@ -8,6 +8,7 @@ import {
   isWaiting,
   parseSections,
   priorityLabel,
+  proposalMeta,
   relationLabel,
   rollupColor,
   rollupLabel,
@@ -130,6 +131,18 @@ describe("parseSections", () => {
   });
   it("пустое описание → []", () => {
     expect(parseSections("")).toEqual([]);
+  });
+});
+
+describe("proposalMeta", () => {
+  it("кто + из какого ws", () => {
+    expect(proposalMeta({ proposed_by: "devopser-arch", source_ws: "DEVOPSER" })).toBe("от devopser-arch · DEVOPSER");
+  });
+  it("без source_ws — только кто", () => {
+    expect(proposalMeta({ proposed_by: "egor" })).toBe("от egor");
+  });
+  it("без provenance — плейсхолдер", () => {
+    expect(proposalMeta({})).toBe("от ?");
   });
 });
 

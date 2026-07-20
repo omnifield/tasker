@@ -42,6 +42,11 @@ export interface NodeDTO {
   description: string;
   status_id: string | null;
   priority: number;
+  // origin: "native" (роадмап-узел) или "proposal" (входящее cross-product предложение,
+  // не в роадмапе, пока не принято). proposed_by/source_ws — провенанс предложки.
+  origin: string;
+  proposed_by?: string;
+  source_ws?: string;
   rollup: Rollup;
   labels: Label[];
   assignees: string[];
@@ -114,8 +119,39 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(apiUrl(path), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j.error) detail = j.error;
+    } catch {
+      /* тело не JSON — оставляем statusText */
+    }
+    throw new Error(`POST ${path} → ${res.status} ${detail}`);
+  }
+  return (await res.json()) as T;
+}
+
 export const listWorkspaces = () => get<Workspace[]>("/workspaces");
 export const workspaceTree = (ws: string) => get<TreeNode[]>(`/workspaces/${ws}/tree`);
 export const listStatuses = (ws: string) => get<Status[]>(`/workspaces/${ws}/statuses`);
 export const nodeRelations = (key: string) => get<RelationView[]>(`/nodes/${key}/relations`);
 export const nodeActivity = (key: string) => get<Activity[]>(`/nodes/${key}/activity`);
+
+// --- cross-product предложки (инбокс + гейт) -------------------------------
+
+export const listInbox = (ws: string) => get<NodeDTO[]>(`/workspaces/${ws}/inbox`);
+
+// acceptProposal приземляет предложку в роадмап (origin→native): parent/status опц.
+export const acceptProposal = (key: string, body: { parent_id?: string | null; status_id?: string | null }) =>
+  post<NodeDTO>(`/nodes/${key}/accept`, body);
+
+// declineProposal отклоняет предложку (canceled + коммент); остаётся в истории инбокса.
+export const declineProposal = (key: string, body: { comment?: string }) =>
+  post<NodeDTO>(`/nodes/${key}/decline`, body);

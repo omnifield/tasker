@@ -74,6 +74,9 @@ export function activityLabel(a: Activity): string {
     assigned: "назначен",
     relation_added: "добавил связь",
     commented: "комментарий",
+    proposed: "предложил",
+    proposal_accepted: "принял предложку",
+    proposal_declined: "отклонил предложку",
   };
   return map[a.kind] ?? a.kind;
 }
@@ -121,6 +124,13 @@ export function parseSections(text: string): Section[] {
   }
   flush();
   return out;
+}
+
+// proposalMeta — краткая подпись происхождения предложки для полосы «Входящие»:
+// «от <кто> · <из какого ws>» (или без ws, если не указан).
+export function proposalMeta(n: { proposed_by?: string; source_ws?: string }): string {
+  const by = n.proposed_by || "?";
+  return n.source_ws ? `от ${by} · ${n.source_ws}` : `от ${by}`;
 }
 
 // activityText — текст комментария из data (kind=commented кладёт {text}); иначе пусто.
