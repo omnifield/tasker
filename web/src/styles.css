@@ -443,3 +443,103 @@ body {
 .error {
   color: #e5534b;
 }
+
+/* --- Входящие (cross-product предложки) --------------------------------- */
+.inbox {
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--cross);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0.6rem 0.75rem;
+}
+.inbox-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.inbox-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.inbox-count {
+  display: inline-block;
+  min-width: 1.2rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--cross);
+  color: #1a1200;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+.inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.proposal {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.proposal.declined {
+  opacity: 0.5;
+}
+.proposal-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0.1rem 0;
+}
+.proposal-main:hover .title {
+  text-decoration: underline;
+}
+.proposal-from {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.proposal-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+.proposal-tag {
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.btn {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--text);
+}
+.btn:hover {
+  border-color: var(--muted);
+}
+.btn.accept {
+  border-color: #2ecc71;
+  color: #7ee2a8;
+}
+.btn.decline {
+  border-color: #e74c3c;
+  color: #f0a097;
+}
