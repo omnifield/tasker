@@ -1,5 +1,5 @@
 import { createMemo, createResource, For, Show } from "solid-js";
-import type { TreeNode } from "./api";
+import type { NodeDTO } from "./api";
 import { nodeActivity, nodeRelations } from "./api";
 import {
   activityLabel,
@@ -17,9 +17,9 @@ import {
 } from "./format";
 import { useTree } from "./treeCtx";
 
-// NodeDetail — правая панель выбранной ноды: вся документация и связи, что отдаёт бэк. Поля узла
-// (описание/статус/метки/роллап) берём из уже загруженного дерева; связи и историю тянем по key.
-export function NodeDetail(props: { node: TreeNode }) {
+// NodeDetail — правая панель выбранной ноды: вся документация и связи, что отдаёт бэк. Узел тянется
+// по key (может быть вне дерева — кросс-ws реф/deep-link); связи и историю тоже по key.
+export function NodeDetail(props: { node: NodeDTO }) {
   const tree = useTree();
   const status = () => tree.statusFor(props.node.status_id);
   const [relations] = createResource(() => props.node.key, nodeRelations);
@@ -83,8 +83,15 @@ export function NodeDetail(props: { node: TreeNode }) {
                 {(rel) => (
                   <li class="dep" classList={{ cross: rel.cross_workspace, waiting: isWaiting(rel) }}>
                     <span class="rel-kind">{rel.kind}</span>
-                    <span class="dep-text">{relationLabel(rel)}</span>
-                    <span class="dep-title muted">{rel.other.title}</span>
+                    {/* Клик по связи ведёт на её узел (по человеческому key, в т.ч. чужой ws). */}
+                    <button
+                      class="dep-link"
+                      onClick={() => tree.select(rel.other.key)}
+                      title={`перейти к ${rel.other.key}`}
+                    >
+                      <span class="dep-text">{relationLabel(rel)}</span>
+                      <span class="dep-title muted">{rel.other.title}</span>
+                    </button>
                   </li>
                 )}
               </For>

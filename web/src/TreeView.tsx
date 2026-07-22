@@ -27,7 +27,7 @@ export function NodeRow(props: { node: TreeNode; depth: number }) {
           {hasChildren() ? (open() ? "▾" : "▸") : "•"}
         </button>
 
-        <button class="node-main" onClick={() => tree.select(props.node)}>
+        <button class="node-main" onClick={() => tree.select(props.node.key)}>
           <span class="prio" style={{ "border-color": priorityColor(props.node.priority), color: priorityColor(props.node.priority) }}>
             {priorityLabel(props.node.priority)}
           </span>
