@@ -17,6 +17,11 @@
     "merge": "squash",
     "branchNaming": "^(feat|fix|chore|docs|refactor|test|perf|build|ci)/[a-z0-9._-]+$",
     "requiredChecks": "from-stack",
-    "commitConvention": "conventional"
+    "commitConvention": "conventional",
+    "repoSettings": {
+      "$comment": "repo-level настройки под auto-merge (DEVOPSER-157), материализуются git-flow rulesets --apply (PATCH repos/{nwo}), дрейф ловит rulesets (check). Методы мержа НЕ дублируются — дерайвятся из defaults.merge (squash → squash-only). autoMerge=true обязателен для land --auto (allow_auto_merge на репо).",
+      "autoMerge": true,
+      "deleteBranchOnMerge": true
+    }
   }
 }

@@ -9,9 +9,12 @@
 //   git-flow commit <msg>          — коммит; defaults.commitConvention валидируется.
 //   git-flow push                  — push текущей ветки в origin.
 //   git-flow pr [--title T --body B] — открыть PR через gh (--base main).
-//   git-flow land                  — frame.prRequired: требует открытый PR; ждёт зелёные
-//                                    defaults.requiredChecks; defaults.merge через gh; удаляет
-//                                    ветку; sync локальный main = origin/main.
+//   git-flow land                  — frame.prRequired: требует открытый PR; включает AUTO-MERGE
+//                                    (gh pr merge --auto по defaults.merge, --delete-branch) и
+//                                    возвращается СРАЗУ — GitHub домержит серверно по зелёным
+//                                    required-checks ruleset'а (DEVOPSER-157). Локально НЕ ждёт и
+//                                    НЕ синкает main — освежает его start (fetch origin/main) или
+//                                    явный git-flow sync.
 //   git-flow sync                  — локальный main = origin/main.
 //   (любая) --dry-run              — печатает мутации (git/gh write), не выполняет.
 //
@@ -66,8 +69,15 @@ export function validateBranchName(name, pattern) {
 export function validateCommitMessage(msg, convention) {
   if (!msg) throw new Error("commit требует сообщение");
   if (convention === "conventional") {
+    // сабж СО СТРОЧНОЙ — Latin ИЛИ кириллица (`: [a-zа-яё]`) — ЗЕРКАЛО CI-гейта
+    // .github/workflows/pr-title.yml subjectPattern `^[a-zа-яё].+$` (DEVOPSER-130). НЕ ASCII-only
+    // `^[a-z]` — тот резал русские сабжи (живой регресс, #53 «приземлить»); НЕ `\p{Ll}` — amannn
+    // гоняет regex без `u`-флага. Иначе `feat: Add x` проходил локальный commit, но падал на
+    // pr-title при land — сюрприз на самом дорогом шаге. PAIRED RULE: правишь тут — правь и
+    // pr-title.yml (типы уже совпадают: те же 11, вкл. revert). Типы branchNaming (9, без
+    // style/revert) намеренно уже — ветка ≠ сабж коммита.
     const re =
-      /^(feat|fix|chore|docs|refactor|test|perf|build|ci|style|revert)(\([\w./-]+\))?!?: .+/;
+      /^(feat|fix|chore|docs|refactor|test|perf|build|ci|style|revert)(\([\w./-]+\))?!?: [a-zа-яё].+/;
     if (!re.test(msg)) throw new Error(`коммит "${msg}" не conventional (type(scope): описание).`);
   }
   return msg;
@@ -106,6 +116,9 @@ export function buildRulesetSpec(preset, checks) {
   if (preset.frame?.prRequired)
     // GitHub Rulesets API требует ПОЛНЫЙ набор pull_request-параметров (иначе 422; DEVOPSER-116).
     // Дефолты сохраняют смысл frame.prRequired = мерж только через PR, без обязательных ревью.
+    // required_approving_review_count = 0 ОБЯЗАТЕЛЬНО (DEVOPSER-157): автор PR не может сам его
+    // апрувнуть (GitHub self-approve запрещён), а флоу одиночный — потребуй ≥1 ревью, и auto-merge
+    // навсегда застрянет без апрувера. Гейт качества = required-checks, не человеко-ревью.
     rules.push({
       type: "pull_request",
       parameters: {
@@ -120,7 +133,10 @@ export function buildRulesetSpec(preset, checks) {
     rules.push({
       type: "required_status_checks",
       parameters: {
-        strict_required_status_checks_policy: true,
+        // strict OFF (DEVOPSER-157): не требуем «ветка up-to-date с base». Со strict auto-merge
+        // залипал бы, требуя ребейз на свежий main всякий раз, как main уезжал под зелёными checks —
+        // фрикция одиночного/агентного флоу. Мерж по зелёным required-checks, без up-to-date-гейта.
+        strict_required_status_checks_policy: false,
         required_status_checks: checks.map((c) => ({ context: c })),
       },
     });
@@ -136,15 +152,16 @@ export function buildRulesetSpec(preset, checks) {
 // Каноничный срез ruleset'а для сравнения (GitHub добавляет id/_links/… — игнорируем).
 function normalizeRuleset(rs) {
   const rules = rs?.rules ?? [];
-  const checks =
-    rules.find((r) => r.type === "required_status_checks")?.parameters?.required_status_checks ??
-    [];
+  const rsc = rules.find((r) => r.type === "required_status_checks");
+  const checks = rsc?.parameters?.required_status_checks ?? [];
   return {
     enforcement: rs?.enforcement,
     target: rs?.target,
     include: rs?.conditions?.ref_name?.include ?? [],
     ruleTypes: rules.map((r) => r.type).sort(),
     checks: checks.map((c) => c.context).sort(),
+    // strict в сравнении (DEVOPSER-157): дрейф ловит ручной strict=true против пресетного OFF.
+    strict: rsc?.parameters?.strict_required_status_checks_policy ?? null,
   };
 }
 
@@ -163,6 +180,38 @@ export function diffRulesets(current, desired) {
   cmp("ref_name.include", a.include, b.include);
   cmp("rules", a.ruleTypes, b.ruleTypes);
   cmp("required_checks", a.checks, b.checks);
+  cmp("strict", a.strict, b.strict);
+  return drift;
+}
+
+// --- Repo-settings-материализация (DEVOPSER-157): пресет → настройки репо -------
+// Auto-merge требует repo-level настроек, которых ruleset не покрывает: squash-only (метод мержа)
+// + allow_auto_merge (иначе `gh pr merge --auto` падает) + delete_branch_on_merge. Единый источник —
+// пресет; материализуются тем же `rulesets --apply` (PATCH repos/{nwo}), дрейф — тем же check.
+
+// Пресет → GitHub PATCH-body. Методы мержа ДЕРАЙВЯТСЯ из defaults.merge (единый источник — «squash»
+// = allow_squash_merge только; невозможен второй источник правды merge≠settings); auto-merge +
+// delete-branch — из defaults.repoSettings (не выводимы из merge).
+export function buildRepoSettings(preset) {
+  const merge = preset.defaults?.merge;
+  const rs = preset.defaults?.repoSettings ?? {};
+  return {
+    allow_squash_merge: merge === "squash",
+    allow_merge_commit: merge === "merge",
+    allow_rebase_merge: merge === "rebase",
+    allow_auto_merge: rs.autoMerge === true,
+    delete_branch_on_merge: rs.deleteBranchOnMerge === true,
+  };
+}
+
+// Дрейф repo-settings: desired (пресет) vs actual (gh api repos/{nwo}) → расхождения ([] = чисто).
+export function diffRepoSettings(current, desired) {
+  const drift = [];
+  for (const k of Object.keys(desired)) {
+    const have = current?.[k] ?? null;
+    if (have !== desired[k])
+      drift.push(`repo.${k}: ${JSON.stringify(have)} ≠ ${JSON.stringify(desired[k])}`);
+  }
   return drift;
 }
 
@@ -178,9 +227,6 @@ export function realExec() {
   return {
     git: call("git"),
     gh: call("gh"),
-    // sleep — тот же inject-seam, что git/gh (тесты подсовывают no-op; иначе waitChecks не
-    // юнит-тестируем — реальный spawnSync("sleep") завис бы на CHECKS_INTERVAL_S).
-    sleep: (s) => spawnSync("sleep", [String(s)]),
     log: (m) => console.log(m),
   };
 }
@@ -238,12 +284,45 @@ function push(exec, preset, { dry }) {
   exec.log(`[git-flow] ${branch} → origin.`);
 }
 
+// Сабжекты коммитов ветки (origin/<base>..HEAD, старые→новые). [] если пусто/ошибка — pr НЕ
+// падает на этом (робастно; инвариант ниже всё равно даёт непустые title/body).
+function branchCommits(exec, base) {
+  const r = exec.git(["log", "--reverse", "--format=%s", `origin/${base}..HEAD`]);
+  if (r.code !== 0) return [];
+  return r.out
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Инвариант (DEVOPSER-129): pr ВСЕГДА порождает валидный non-interactive gh — title И body
+// удовлетворены (иначе `gh pr create` в non-interactive требует тело → падает).
+//  • ноль флагов          → `--fill` (gh выводит title+body из коммитов; чисто non-interactive).
+//  • иначе                → явные `--title`/`--body`; недостающее выводим из коммитов ветки,
+//                           фолбэк = сам title (затем branch). `--fill` НЕ мешаем с явным
+//                           `--title` (gh их не совмещает).
+// commits — сабжекты ветки (пустой массив ок); branch — фолбэк последней инстанции.
+export function buildPrArgs(flags, commits, branch, base = "main") {
+  const args = ["pr", "create", "--base", base];
+  if (!flags.title && !flags.body) {
+    args.push("--fill");
+    return args;
+  }
+  const derivedBody = commits.length ? commits.map((c) => `- ${c}`).join("\n") : "";
+  const title = flags.title || commits[0] || branch; // всегда непусто
+  const body = flags.body || derivedBody || flags.title || branch; // фолбэк = сам title
+  args.push("--title", title, "--body", body);
+  return args;
+}
+
 function pr(exec, preset, flags, { dry }) {
-  assertNotMain(currentBranch(exec), preset.frame);
-  const args = ["pr", "create", "--base", "main"];
-  if (flags.title) args.push("--title", flags.title);
-  if (flags.body) args.push("--body", flags.body);
-  if (!flags.title) args.push("--fill"); // тайтл/тело из коммитов
+  const branch = assertNotMain(currentBranch(exec), preset.frame);
+  const base = "main";
+  // Коммиты нужны ТОЛЬКО в derive-пути (ровно один из title/body задан). Оба заданы или ни одного
+  // (--fill) — чтение лишнее.
+  const needDerive = (flags.title || flags.body) && !(flags.title && flags.body);
+  const commits = needDerive ? branchCommits(exec, base) : [];
+  const args = buildPrArgs(flags, commits, branch, base);
   mutate(exec, dry, "gh", args);
   exec.log("[git-flow] PR открыт.");
 }
@@ -259,57 +338,6 @@ function requireOpenPr(exec) {
   if (r.out.trim() !== "OPEN") throw new Error(`frame.prRequired: PR не OPEN (${r.out.trim()}).`);
 }
 
-// Ждёт ли пресет вообще проверок? "from-stack" или непустой массив → да (эти проверки ОБЯЗАНЫ
-// прийти зелёными); пустой массив / прочее → нет. Придаёт смысл исходу «no checks reported»:
-// ждём проверок vs проверок и не должно быть (DEVOPSER-115).
-export function expectsChecks(requiredChecks) {
-  if (requiredChecks === "from-stack") return true;
-  if (Array.isArray(requiredChecks)) return requiredChecks.length > 0;
-  return false;
-}
-
-// Ждём зелёные checks. Три исхода различаем ЯВНО (DEVOPSER-115 — догфуд land -114 вскрыл, что
-// сразу после `pr` проверки ещё НЕ зарегистрированы и старый код путал их с реальным fail'ом):
-//  • code 0                      → все проверки зелёные → return.
-//  • маркер «no checks reported» → проверки ЕЩЁ не зарегистрированы (транзиент; появятся через
-//    секунды) → ждём с ОТДЕЛЬНЫМ капом на регистрацию (CHECKS_REG_TRIES), не бесконечно. По
-//    исчерпании капа решает requiredChecks: пресет ждёт проверки (from-stack|непустой) а их нет →
-//    внятный throw (ожидаемое не пришло); пресет проверок не ждёт → «no checks» = успех, return.
-//  • code 8 (pending)            → проверки есть, идут → ждём (CHECKS_TRIES).
-//  • иначе                       → проверки есть, но не зелёные → throw (реальный fail; не ослабляем).
-// Маркер ловим по СТРОКЕ вывода gh, НЕ по exit-code: gh отдаёт «no checks» generic-кодом (не 8),
-// неотличимым по числу от реального fail'а (сверено: gh 2.96 «no checks reported on the '<branch>'»).
-const CHECKS_TRIES = 60;
-const CHECKS_INTERVAL_S = 10;
-const CHECKS_REG_TRIES = 12; // отдельный кап на РЕГИСТРАЦИЮ проверок (≈2 мин), не бесконечно.
-const NO_CHECKS_RE = /no checks reported/i;
-export function waitChecks(exec, requiredChecks) {
-  let reg = 0; // сколько итераций подряд видели «no checks reported» — кап на регистрацию.
-  for (let i = 0; i < CHECKS_TRIES; i++) {
-    const r = exec.gh(["pr", "checks"]);
-    if (r.code === 0) return; // все зелёные
-    if (NO_CHECKS_RE.test(`${r.out}\n${r.err}`)) {
-      if (++reg > CHECKS_REG_TRIES) {
-        if (expectsChecks(requiredChecks))
-          throw new Error(
-            `checks: ожидаемые проверки (${JSON.stringify(requiredChecks)}) не зарегистрировались за кап — «no checks reported» на PR.`,
-          );
-        return; // пресет проверок не ждёт → отсутствие проверок = успех.
-      }
-      exec.log("[git-flow] проверки ещё не зарегистрированы — ждём…");
-      exec.sleep(CHECKS_INTERVAL_S);
-      continue;
-    }
-    if (r.code === 8) {
-      exec.log("[git-flow] checks pending — ждём…");
-      exec.sleep(CHECKS_INTERVAL_S);
-      continue;
-    }
-    throw new Error(`checks не зелёные:\n${(r.out || r.err).trim()}`);
-  }
-  throw new Error("checks не дождались зелёного (timeout).");
-}
-
 function syncMain(exec, { dry } = {}) {
   mutate(exec, dry, "git", ["fetch", "origin", "main"]);
   mutate(exec, dry, "git", ["checkout", "main"]);
@@ -317,13 +345,25 @@ function syncMain(exec, { dry } = {}) {
   exec.log("[git-flow] local main = origin/main.");
 }
 
-async function land(exec, preset, _flags, { dry }) {
+// AUTO-MERGE (DEVOPSER-157): включает серверный auto-merge и возвращается СРАЗУ — GitHub домержит
+// PR по зелёным required-checks ruleset'а и удалит ветку сам. Локально НЕ ждём checks и НЕ синкаем
+// main: гейт качества — required-checks на серверной стороне (strict OFF, self-approve невозможен →
+// approvals=0), а свежесть main обеспечивают start (fetch origin/main) и явный git-flow sync.
+// Требует repo-настроек из пресета (allow_auto_merge + squash-only) — материализуй git-flow
+// rulesets --apply, иначе `gh pr merge --auto` упадёт.
+function land(exec, preset, _flags, { dry }) {
   const branch = assertNotMain(currentBranch(exec), preset.frame);
   if (preset.frame.prRequired) requireOpenPr(exec);
-  waitChecks(exec, preset.defaults.requiredChecks);
-  mutate(exec, dry, "gh", ["pr", "merge", mergeFlag(preset.defaults.merge), "--delete-branch"]);
-  exec.log(`[git-flow] ${branch}: merge (${preset.defaults.merge}) + ветка удалена.`);
-  syncMain(exec, { dry });
+  mutate(exec, dry, "gh", [
+    "pr",
+    "merge",
+    "--auto",
+    mergeFlag(preset.defaults.merge),
+    "--delete-branch",
+  ]);
+  exec.log(
+    `[git-flow] ${branch}: auto-merge (${preset.defaults.merge}) включён — GitHub смержит по зелёным required-checks + удалит ветку. Синк локального main — git-flow sync после мержа.`,
+  );
 }
 
 // nameWithOwner текущего репо (в переменной — литерала-плейсхолдера {owner} нет).
@@ -336,10 +376,19 @@ function repoNwo(exec) {
   );
 }
 
-// Required-контексты = РЕАЛЬНЫЕ имена check-run'ов default-ветки (ground truth; DEVOPSER-117).
-// GitHub именует проверки reusable-caller'ов '<job> / <inner-job-name>', голых ключей job'а нет —
-// поэтому берём фактические check-run'ы, а не ключи ci.yml. Самокорректируется, не завязано на
-// внутренности reusable. Прогонов ещё нет → пусто (звонящий делает loud-warn, не молча ключи).
+// Каллер-джобы skeleton stack-CI — зеркалит template.json ci.jobs[*].name (+ init.mjs CI_JOB):
+// go→"go", node→"node", frontend→"web", python→"python" (DEVOPSER-159). GitHub именует check-run
+// reusable-caller'а "<caller-job> / <inner-job>" — ТОЛЬКО они субстантивны (сборка/тест/drift per
+// stack) и годятся в required. CodeQL default-setup ("Analyze (…)"), pr-title/semantic и прочая
+// инфра этого stack-префикса НЕ несут → в required не попадают by construction.
+const STACK_CI_JOBS = ["go", "node", "web", "python"];
+export const isStackCiCheck = (name) => STACK_CI_JOBS.some((job) => name.startsWith(`${job} / `));
+
+// Required-контексты = РЕАЛЬНЫЕ имена stack-CI check-run'ов default-ветки (ground truth,
+// DEVOPSER-117), СУЖЕННЫЕ до stack-CI (DEVOPSER-138). GitHub именует проверки reusable-caller'ов
+// '<job> / <inner-job-name>', голых ключей job'а нет — берём фактические check-run'ы (не ключи
+// ci.yml, самокорректируется), но оставляем лишь stack-CI (isStackCiCheck): CodeQL/pr-title/инфра
+// отсеиваются, их флейк не блокирует мерж. Прогонов ещё нет → пусто (звонящий делает loud-warn).
 function resolveCheckRunNames(exec, nwo) {
   const branch = read(
     exec,
@@ -358,14 +407,16 @@ function resolveCheckRunNames(exec, nwo) {
       names
         .split("\n")
         .map((s) => s.trim())
-        .filter(Boolean),
+        .filter(Boolean)
+        .filter(isStackCiCheck), // сузить до stack-CI: CodeQL/pr-title/инфра — не required (DEVOPSER-138)
     ),
   ];
 }
 
-// rulesets — материализатор enforcement из git-пресета. Дефолт = check (дрейф → loud-fail);
-// --apply применяет через gh api (идемпотентно: PUT если ruleset есть, иначе POST). Admin-scope
-// токен для apply — env-инжект (gh читает GH_TOKEN), НЕ хардкодится.
+// rulesets — материализатор enforcement из git-пресета: ruleset (branch-protection) + repo-settings
+// (squash-only + auto-merge, DEVOPSER-157). Дефолт = check (дрейф обоих → loud-fail); --apply
+// применяет через gh api (ruleset идемпотентно PUT/POST; repo-settings PATCH). Admin-scope токен для
+// apply — env-инжект (gh читает GH_TOKEN), НЕ хардкодится.
 async function rulesets(exec, preset, { apply, dry }) {
   const nwo = repoNwo(exec);
   const rc = preset.defaults?.requiredChecks;
@@ -377,12 +428,25 @@ async function rulesets(exec, preset, { apply, dry }) {
       "[git-flow] ⚠ check-run'ов на default-ветке нет — required-checks ПУСТ. Прогони CI, затем rulesets --apply (иначе проверки не станут required).",
     );
   const desired = buildRulesetSpec(preset, checks);
+  const desiredRepo = buildRepoSettings(preset); // squash-only + auto-merge (DEVOPSER-157)
   const path = `repos/${nwo}/rulesets`;
   const list = JSON.parse(read(exec, "gh", ["api", path], "rulesets") || "[]");
   const existing = list.find((r) => r.name === RULESET_NAME);
   exec.log(`[git-flow] ruleset ${RULESET_NAME}: required checks [${checks.join(", ")}].`);
+  exec.log(`[git-flow] repo-settings: ${JSON.stringify(desiredRepo)}.`);
 
   if (apply) {
+    // repo-settings ПЕРЕД ruleset: auto-merge (land --auto) требует allow_auto_merge на репо.
+    if (dry) exec.log(`[dry-run] gh api repos/${nwo} --method PATCH (repo-settings)`);
+    else
+      mutate(
+        exec,
+        false,
+        "gh",
+        ["api", `repos/${nwo}`, "--method", "PATCH", "--input", "-"],
+        JSON.stringify(desiredRepo),
+      );
+    exec.log("[git-flow] repo-settings применены (PATCH).");
     const method = existing ? "PUT" : "POST";
     const at = existing ? `${path}/${existing.id}` : path;
     if (dry) exec.log(`[dry-run] gh api ${at} --method ${method} (ruleset ${RULESET_NAME})`);
@@ -398,17 +462,18 @@ async function rulesets(exec, preset, { apply, dry }) {
     return;
   }
 
+  const currentRepo = JSON.parse(read(exec, "gh", ["api", `repos/${nwo}`], "repo") || "{}");
   const current = existing
     ? JSON.parse(read(exec, "gh", ["api", `${path}/${existing.id}`], "ruleset"))
     : null;
-  const drift = diffRulesets(current, desired);
+  const drift = [...diffRepoSettings(currentRepo, desiredRepo), ...diffRulesets(current, desired)];
   if (drift.length) {
     for (const d of drift) exec.log(`  - ${d}`);
     throw new Error(
-      `ruleset дрейф против git-пресета (${drift.length}) — синк: git-flow rulesets --apply`,
+      `ruleset/repo дрейф против git-пресета (${drift.length}) — синк: git-flow rulesets --apply`,
     );
   }
-  exec.log(`[git-flow] ruleset ${RULESET_NAME}: совпадает с пресетом (чисто).`);
+  exec.log(`[git-flow] ruleset ${RULESET_NAME} + repo-settings: совпадает с пресетом (чисто).`);
 }
 
 function parseFlags(argv) {
@@ -433,7 +498,7 @@ export async function dispatch(argv, exec, preset, opts = {}) {
     case "pr":
       return pr(exec, preset, parseFlags(rest), opts);
     case "land":
-      return await land(exec, preset, parseFlags(rest), opts);
+      return land(exec, preset, parseFlags(rest), opts);
     case "sync":
       return syncMain(exec, opts);
     case "rulesets":
@@ -450,9 +515,9 @@ function printHelp() {
       "  commit <msg>          коммит (по commitConvention)\n" +
       "  push                  push ветки в origin\n" +
       "  pr [--title --body]   открыть PR (gh)\n" +
-      "  land                  зелёные checks → merge (по пресету) → удалить ветку → sync main\n" +
+      "  land                  включить auto-merge (по пресету, --auto) → GitHub домержит по зелёным + удалит ветку\n" +
       "  sync                  local main = origin/main\n" +
-      "  rulesets [--apply]    материализовать GitHub-rulesets из git-пресета (дефолт: check-дрейф)",
+      "  rulesets [--apply]    материализовать GitHub-rulesets + repo-settings из git-пресета (дефолт: check-дрейф)",
   );
 }
 
