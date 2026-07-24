@@ -3,7 +3,11 @@
   "image": "ghcr.io/omnifield/devbox:v2026.07.10",
   "remoteUser": "vscode",
   "initializeCommand": "docker network create omnifield-gateway 2>/dev/null || true",
-  "runArgs": ["--network=omnifield-gateway", "--network-alias=tasker"],
+  "runArgs": [
+    "--network=omnifield-gateway",
+    "--network-alias=tasker",
+    "--add-host=host.docker.internal:host-gateway"
+  ],
   "containerEnv": {
     "CLAUDE_CONFIG_DIR": "/home/vscode/.secrets/claude",
     "NPM_CONFIG_USERCONFIG": "/home/vscode/.secrets/npmrc",

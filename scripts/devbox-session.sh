@@ -29,7 +29,8 @@ REPO=$(basename "$REPO_ROOT")
 # --- резолвим контейнер репо ----------------------------------------------
 # Канон-конвенция имени `${repo}-devbox` = КОНТРАКТ (её ставит Шаг-2 провижинер `devbox up`);
 # имена НЕ хардкодятся в скрипте — вычисляются из basename репо. Fallback — метка VS Code
-# devcontainer (Reopen in Container кладёт свою). Каталог продуктов — registry/products.md.
+# devcontainer (Reopen in Container кладёт свою). Каталог продуктов = per-product
+# манифесты (omnifield.yaml в корне репо), собираемые сканом hub-core, не registry-файл.
 CONTAINER="${REPO}-devbox"
 if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
   CONTAINER=$(docker ps -aq --filter "label=devcontainer.local_folder=$REPO_ROOT" | head -n1 || true)
