@@ -9,11 +9,24 @@ concurrency:
 # (объём — по канону каждого reusable: go → contents:read; node → +actions,+packages).
 permissions: { contents: read, packages: read }
 jobs:
+  # ПЕРЕХОДНЫЙ ПЕРИОД: drift-check выключен на время переезда на обвес baser.
+  # Сверка вендоренных skeleton-копий сравнивает `.devcontainer/devcontainer.json`
+  # с эталоном devopser, а с 2026-08-06 этот файл кладёт обвес
+  # `@omnifield/baser-devbox` — у него другой хозяин, и дрейф против devopser тут
+  # ожидаем по построению, а не случаен.
+  #
+  # Отдельно: сверка на этом файле не «краснеет», а ПАДАЕТ — `init.mjs` разбирает
+  # co-owned JSON через `JSON.parse`, а devcontainer.json законно несёт
+  # комментарии (JSONC, спека Dev Containers их допускает). Заявка производству
+  # devopser отправлена; здесь выключено потому, что сверять больше нечего.
   go:
     uses: omnifield/devopser/.github/workflows/go-ci.yml@main
+    with:
+      drift-check: false
   # Фронт приземлился (web/, vite+solid:5173, read-first дерево) → включаем web-ci
   # (lint · typecheck · test · build; тулчейн — из пинов web/package.json).
   web:
     uses: omnifield/devopser/.github/workflows/web-ci.yml@main
     with:
       working-directory: web
+      drift-check: false
