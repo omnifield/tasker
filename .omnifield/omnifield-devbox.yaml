@@ -1,0 +1,30 @@
+# Настройки обвеса omnifield/devbox для локации tasker.
+# Всё вне ключа `baser` принадлежит самому инструменту, дверь туда не смотрит.
+baser:
+  # Раскладка omnifield: общая сеть, тома секретов и стора, ассистент внутри.
+  presets:
+    - omnifield
+  settings:
+    # Скоуп приватного реестра — раньше жил в корневом `.npmrc` локации.
+    npmScope: '@omnifield'
+    # ИНВЕНТАРЬ ТУЛЧЕЙНА (kb:BASER3-14, шаг 0). Бэкенд поднимается командой
+    # `go run ./cmd/tasker` — без Go локация не стартует вовсе, а обвес девбокса
+    # node-центричный по построению. github-cli — дефолт обвеса, перечисляется
+    # целиком, потому что карта задаётся значением, а не дополняется.
+    devcontainerFeatures:
+      ghcr.io/devcontainers/features/github-cli:1: {}
+      ghcr.io/devcontainers/features/go:1: {}
+    # Свои тома локации. `own` не указан — значит true: точка попадает в chown
+    # постсоздания, и это здесь обязательно. Прежний девбокс делал те же chown'ы
+    # руками в postCreateCommand; теперь это настройка, а не правка.
+    volumes:
+      # Общий реестр продуктовых манифестов: сюда пишет devbox-publish.mjs.
+      omnifield-registry:
+        target: /omnifield-registry
+      # БОЕВЫЕ ДАННЫЕ: здесь лежит tasker.db, которым мы пользуемся каждый день.
+      # Том именованный и переезд переживает — меняется только точка монтирования.
+      tasker-data:
+        target: /data/tasker
+    # Команды после старта — те же, что были в postStartCommand прежнего девбокса:
+    # публикация манифеста в общий реестр, затем подъём бэкенда и фронтенда.
+    startCommand: 'node scripts/devbox-publish.mjs; node scripts/devbox-services.mjs up'
