@@ -1,12 +1,14 @@
 import { createContext, useContext } from "solid-js";
-import type { Status, TreeNode } from "./api";
+import type { Status } from "./api";
 
 // TreeCtx — общий контекст дерева: резолв статуса по id (для собственного бейджа узла) и
-// выбор ноды (клик по строке → панель деталей). Избегаем прокидывания пропсов через рекурсию.
+// навигация на ноду по key (клик по строке/рефу → URL-хэш → панель деталей). Избегаем
+// прокидывания пропсов через рекурсию. select принимает key (не узел): цель рефа может быть
+// из чужого воркспейса и вне загруженного дерева — деталь тянется по key.
 export interface TreeCtx {
   statusFor: (id: string | null) => Status | undefined;
   selectedKey: () => string | undefined;
-  select: (node: TreeNode) => void;
+  select: (key: string) => void;
 }
 
 const Ctx = createContext<TreeCtx>();

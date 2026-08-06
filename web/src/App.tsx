@@ -1,8 +1,9 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import type { NodeDTO, Status, TreeNode } from "./api";
 import {
   acceptProposal,
   declineProposal,
+  getNode,
   listInbox,
   listStatuses,
   listWorkspaces,
@@ -10,6 +11,7 @@ import {
 } from "./api";
 import { priorityColor, priorityLabel, proposalMeta, rollupColor } from "./format";
 import { NodeDetail } from "./NodeDetail";
+import { nodeHash, parseHash, wsHash } from "./route";
 import { NodeRow } from "./TreeView";
 import { TreeProvider } from "./treeCtx";
 
@@ -20,18 +22,30 @@ const CATEGORY_ORDER = ["in_progress", "todo", "backlog", "done", "canceled"];
 // роллап) → панель деталей выбранной ноды. Только просмотр; правка — следующая итерация.
 export function App() {
   const [workspaces] = createResource(listWorkspaces);
-  const [selected, setSelected] = createSignal<string | undefined>();
-  const [sel, setSel] = createSignal<TreeNode | undefined>();
 
-  // Автовыбор первого workspace, как только список приехал.
+  // URL-хэш = источник правды навигации: `#/<WS>` — раздел, `#/<KEY>` — узел. hashchange
+  // (back/forward + reload) → route; клик пишет хэш через goToWs/goToNode. См. route.ts.
+  const [route, setRoute] = createSignal(parseHash(window.location.hash));
+  const onHash = () => setRoute(parseHash(window.location.hash));
+  window.addEventListener("hashchange", onHash);
+  onCleanup(() => window.removeEventListener("hashchange", onHash));
+  const goToWs = (ws: string) => (window.location.hash = wsHash(ws));
+  const goToNode = (key: string) => (window.location.hash = nodeHash(key));
+
+  const selected = () => route().ws; // активный workspace
+  const selectedKey = () => route().key; // выбранный узел (deep-link/клик)
+
+  // Автовыбор первого workspace, как только список приехал (и хэш пуст).
   createEffect(() => {
     const list = workspaces();
-    if (list && list.length > 0 && selected() === undefined) setSelected(list[0].key);
+    if (list && list.length > 0 && !route().ws) goToWs(list[0].key);
   });
 
   const [tree, { refetch: refetchTree }] = createResource(selected, workspaceTree);
   const [statuses] = createResource(selected, listStatuses);
   const [inbox, { refetch: refetchInbox }] = createResource(selected, listInbox);
+  // Деталь выбранного узла тянем по key: узел может быть вне дерева (кросс-ws реф/deep-link).
+  const [selNode] = createResource(selectedKey, getNode);
   const [actionErr, setActionErr] = createSignal<string | undefined>();
 
   // id → Status для резолва собственного статуса узла и обзора по категориям.
@@ -60,7 +74,7 @@ export function App() {
     setActionErr(undefined);
     try {
       await acceptProposal(p.key, { status_id: statusByCat().get("backlog") ?? null });
-      setSel(undefined);
+      if (selectedKey()) goToWs(selected()!); // снимаем деталь предложки, если открыта
       void refetchInbox();
       void refetchTree();
     } catch (e) {
@@ -75,17 +89,16 @@ export function App() {
     if (comment === null) return; // отмена диалога
     try {
       await declineProposal(p.key, { comment });
-      setSel(undefined);
+      if (selectedKey()) goToWs(selected()!); // снимаем деталь отклонённой предложки
       void refetchInbox();
     } catch (e) {
       setActionErr(String(e));
     }
   };
 
-  // Смена workspace сбрасывает выбранную ноду (она из другого дерева) и ошибку действия.
+  // Смена workspace сбрасывает ошибку действия (выбранная нода живёт в URL, не в сигнале).
   createEffect(() => {
     selected();
-    setSel(undefined);
     setActionErr(undefined);
   });
 
@@ -122,7 +135,7 @@ export function App() {
                       <button
                         class="ws-item"
                         classList={{ active: ws.key === selected() }}
-                        onClick={() => setSelected(ws.key)}
+                        onClick={() => goToWs(ws.key)}
                       >
                         <span class="ws-key">{ws.key}</span>
                         <span class="ws-name">{ws.name}</span>
@@ -135,7 +148,7 @@ export function App() {
           </Show>
         </nav>
 
-        <TreeProvider value={{ statusFor, selectedKey: () => sel()?.key, select: setSel }}>
+        <TreeProvider value={{ statusFor, selectedKey, select: goToNode }}>
           <section class="tree-pane">
             <Show when={selected()} fallback={<p class="muted">выберите workspace слева</p>}>
               <div class="pane-head">
@@ -173,7 +186,7 @@ export function App() {
                     <For each={inbox()}>
                       {(p) => (
                         <li class="proposal" classList={{ declined: isDeclined(p) }}>
-                          <button class="proposal-main" onClick={() => setSel({ ...p, children: [] })}>
+                          <button class="proposal-main" onClick={() => goToNode(p.key)}>
                             <span
                               class="prio"
                               style={{ "border-color": priorityColor(p.priority), color: priorityColor(p.priority) }}
@@ -216,8 +229,18 @@ export function App() {
             </Show>
           </section>
 
-          <Show when={sel()} fallback={<aside class="detail empty"><p class="muted">выберите ноду — покажу документацию, статус, зависимости и историю</p></aside>}>
-            {(node) => <NodeDetail node={node()} />}
+          <Show
+            when={selectedKey()}
+            fallback={<aside class="detail empty"><p class="muted">выберите ноду — покажу документацию, статус, зависимости и историю</p></aside>}
+          >
+            <Show
+              when={!selNode.error}
+              fallback={<aside class="detail empty"><p class="error">{String(selNode.error)}</p></aside>}
+            >
+              <Show when={selNode()} fallback={<aside class="detail empty"><p class="muted">загрузка ноды…</p></aside>}>
+                {(node) => <NodeDetail node={node()} />}
+              </Show>
+            </Show>
           </Show>
         </TreeProvider>
       </main>

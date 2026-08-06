@@ -140,6 +140,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 
 export const listWorkspaces = () => get<Workspace[]>("/workspaces");
 export const workspaceTree = (ws: string) => get<TreeNode[]>(`/workspaces/${ws}/tree`);
+// getNode — узел по key ИЛИ UUID (dual-id). Нужен для deep-link/кросс-ws рефов: узел может быть
+// вне текущего дерева (чужой воркспейс) — тянем напрямую, а не ищем в загруженном дереве.
+export const getNode = (key: string) => get<NodeDTO>(`/nodes/${key}`);
 export const listStatuses = (ws: string) => get<Status[]>(`/workspaces/${ws}/statuses`);
 export const nodeRelations = (key: string) => get<RelationView[]>(`/nodes/${key}/relations`);
 export const nodeActivity = (key: string) => get<Activity[]>(`/nodes/${key}/activity`);

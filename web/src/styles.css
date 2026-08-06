@@ -387,6 +387,27 @@ body {
   flex-wrap: wrap;
 }
 
+/* Кликабельная связь: reset кнопки, ведёт на узел по key (в т.ч. чужой ws). */
+.dep-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dep-link:hover .dep-text,
+.dep-link:focus-visible .dep-text {
+  text-decoration: underline;
+}
+
 .dep.cross .dep-text {
   color: var(--cross);
 }
